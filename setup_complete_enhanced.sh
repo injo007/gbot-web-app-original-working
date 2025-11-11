@@ -76,13 +76,8 @@ setup_frontend_enhanced() {
     sudo sysctl -w vm.max_map_count=262144 2>/dev/null || true
     sudo sysctl -w fs.file-max=65535 2>/dev/null || true
     
-    # Check dpkg configuration
-    log "Checking dpkg configuration..."
-    sudo dpkg --configure -a
-    
-    # Install required system packages
-    log "Installing system dependencies..."
-    sudo apt-get install -y curl wget git build-essential python3 python3-pip nginx libssl-dev pkg-config libpq-dev
+    # Skip system package installation as requested
+    log "Skipping system dependencies installation (handled manually)"
     
     # Clean up old frontend files completely (critical step)
     log "Aggressive cleanup of old frontend files..."
@@ -172,48 +167,19 @@ EOF
         exit 1
     }
     
-    # Check if Node.js is installed and install if missing
-    log "Checking for Node.js installation..."
+    # Check if Node.js and npm are installed (but don't install them)
+    log "Checking if Node.js and npm are available..."
     if ! command -v node &> /dev/null; then
-        log "Node.js not found. Installing Node.js 20.x..."
-        
-        # Install Node.js 20.x 
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
-        
-        # Verify installation
-        if ! command -v node &> /dev/null; then
-            log_error "Failed to install Node.js. Trying alternative method..."
-            
-            # Try direct download as fallback
-            sudo apt-get install -y ca-certificates curl gnupg
-            sudo mkdir -p /etc/apt/keyrings
-            curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-            echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-            sudo apt-get update
-            sudo apt-get install -y nodejs
-            
-            if ! command -v node &> /dev/null; then
-                log_error "Node.js installation failed. Please install Node.js manually."
-                exit 1
-            fi
-        fi
-        
-        log_success "Node.js $(node -v) installed successfully"
-    else
-        log_success "Node.js $(node -v) is already installed"
+        log_error "Node.js not found. Please install Node.js 20.x manually."
+        exit 1
     fi
+    log_success "Node.js $(node -v) is available"
     
-    # Verify npm is available
     if ! command -v npm &> /dev/null; then
-        log_error "npm not found. Installing npm..."
-        sudo apt-get install -y npm
-        
-        if ! command -v npm &> /dev/null; then
-            log_error "npm installation failed. Please install npm manually."
-            exit 1
-        fi
+        log_error "npm not found. Please install npm manually."
+        exit 1
     fi
+    log_success "npm is available"
     
     # Clean npm cache and node_modules
     log "Cleaning npm environment..."
