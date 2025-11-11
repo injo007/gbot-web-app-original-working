@@ -19,26 +19,41 @@ PROJECT_NAME="GBot Web Application"
 LOG_FILE="$SCRIPT_DIR/setup.log"
 
 # Frontend configuration
-if [[ "$SCRIPT_DIR" == */gbot-frontend ]]; then
+if [[ "$SCRIPT_DIR" == */opt/gbot-web-app* ]]; then
+    # We're in the /opt/gbot-web-app* directory
+    FRONTEND_DIR="$SCRIPT_DIR/gbot-frontend"
+    FRONTEND_DIST="$FRONTEND_DIR/dist"
+    FRONTEND_STATIC="$SCRIPT_DIR/static"
+    FRONTEND_BACKUP="$SCRIPT_DIR/static.bak"
+    APP_ROOT="$SCRIPT_DIR"
+elif [[ "$SCRIPT_DIR" == */gbot-frontend ]]; then
     # We're inside the frontend directory
     FRONTEND_DIR="$SCRIPT_DIR"
     PARENT_DIR="$(dirname "$SCRIPT_DIR")"
     FRONTEND_DIST="$FRONTEND_DIR/dist"
     FRONTEND_STATIC="$PARENT_DIR/static"
     FRONTEND_BACKUP="$PARENT_DIR/static.bak"
-elif [[ "$SCRIPT_DIR" == */gbot-web-app* ]]; then
-    # We're in the main app directory
-    FRONTEND_DIR="$SCRIPT_DIR/gbot-frontend"
-    FRONTEND_DIST="$FRONTEND_DIR/dist"
-    FRONTEND_STATIC="$SCRIPT_DIR/static"
-    FRONTEND_BACKUP="$SCRIPT_DIR/static.bak"
+    APP_ROOT="$PARENT_DIR"
 else
-    # Fallback for other locations
-    FRONTEND_DIR="$(dirname "$SCRIPT_DIR")/gbot-frontend"
+    # We're in some other directory
+    APP_ROOT="/opt/gbot-web-app-original-working"
+    FRONTEND_DIR="$APP_ROOT/gbot-frontend"
     FRONTEND_DIST="$FRONTEND_DIR/dist"
-    FRONTEND_STATIC="$(dirname "$SCRIPT_DIR")/static"
-    FRONTEND_BACKUP="$(dirname "$SCRIPT_DIR")/static.bak"
+    FRONTEND_STATIC="$APP_ROOT/static"
+    FRONTEND_BACKUP="$APP_ROOT/static.bak"
 fi
+
+# Create app root directory if it doesn't exist
+if [ ! -d "$APP_ROOT" ]; then
+    sudo mkdir -p "$APP_ROOT"
+    sudo chown -R $(whoami):$(whoami) "$APP_ROOT"
+fi
+
+# Change to app root directory
+cd "$APP_ROOT" || {
+    log_error "Failed to change to app root directory: $APP_ROOT"
+    exit 1
+}
 
 # Logging functions
 log() {
@@ -93,14 +108,59 @@ setup_frontend() {
         log "Using existing directory structure"
     fi
 
-    # Backup existing static files
+    # Clean up old frontend files
+    log "Cleaning up old frontend files..."
+    
+    # Backup and remove old static files
     if [ -d "$FRONTEND_STATIC" ]; then
-        log "Backing up existing static files..."
-        mv "$FRONTEND_STATIC" "$FRONTEND_BACKUP"
+        log "Backing up old static files..."
+        BACKUP_DIR="${APP_ROOT}/backups/static_$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$BACKUP_DIR"
+        cp -r "$FRONTEND_STATIC"/* "$BACKUP_DIR/" 2>/dev/null || true
+        rm -rf "$FRONTEND_STATIC"/*
     fi
 
-    # Create static directory
+    # Clean up old files
+    log "Cleaning up old files..."
+    find "$APP_ROOT" -maxdepth 1 -type f \( \
+        -name "*_FIX.md" -o \
+        -name "fix_*.sh" -o \
+        -name "fix_*.py" -o \
+        -name "fix_*.sql" -o \
+        -name "QUICK_FIX_*.md" -o \
+        -name "*_DEBUG.md" -o \
+        -name "test_*.py" -o \
+        -name "test_*.sh" -o \
+        -name "check_*.py" -o \
+        -name "check_*.sh" -o \
+        -name "diagnose_*.py" -o \
+        -name "diagnose_*.sh" \
+    \) -delete
+
+    # Clean up old directories
+    if [ -d "$APP_ROOT/templates" ]; then
+        log "Removing old template files..."
+        rm -rf "$APP_ROOT/templates"
+    fi
+
+    # Create fresh static directory
     mkdir -p "$FRONTEND_STATIC"
+
+    # Clean up old templates
+    if [ -d "$SCRIPT_DIR/templates" ]; then
+        log "Removing old template files..."
+        rm -rf "$SCRIPT_DIR/templates"
+    fi
+
+    # Clean up old fix files
+    log "Removing old fix files..."
+    rm -f "$SCRIPT_DIR"/*_FIX.md
+    rm -f "$SCRIPT_DIR"/fix_*.{sh,py,sql}
+    rm -f "$SCRIPT_DIR"/QUICK_FIX_*.md
+    rm -f "$SCRIPT_DIR"/*_DEBUG.md
+    rm -f "$SCRIPT_DIR"/test_*.{py,sh}
+    rm -f "$SCRIPT_DIR"/check_*.{py,sh}
+    rm -f "$SCRIPT_DIR"/diagnose_*.{py,sh}
 
     # Check if we're in the correct directory structure
     if [[ "$SCRIPT_DIR" == */gbot-frontend ]]; then
@@ -245,13 +305,26 @@ setup_frontend() {
 
     # Update Flask app to serve frontend
     log "Updating Flask app to serve frontend..."
-    if ! grep -q "send_from_directory" "$SCRIPT_DIR/app.py"; then
-        cat >> "$SCRIPT_DIR/app.py" << 'EOF'
+    
+    # Create backup of app.py
+    cp "$SCRIPT_DIR/app.py" "$SCRIPT_DIR/app.py.bak"
+    
+    # Remove old frontend routes
+    sed -i '/# Frontend serving routes/,/return send_from_directory/d' "$SCRIPT_DIR/app.py"
+    
+    # Add new frontend routes
+    cat >> "$SCRIPT_DIR/app.py" << 'EOF'
 
 # Frontend serving routes
 import os
-from flask import send_from_directory
+from flask import send_from_directory, jsonify
 
+# Health check endpoint
+@app.route('/api/health')
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
+# Frontend routes
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve(path):
@@ -259,6 +332,12 @@ def serve(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 EOF
+
+    # Verify Flask app update
+    if ! grep -q "send_from_directory" "$SCRIPT_DIR/app.py"; then
+        log_error "Failed to update Flask app"
+        mv "$SCRIPT_DIR/app.py.bak" "$SCRIPT_DIR/app.py"
+        exit 1
     fi
 
     # Copy new frontend files to static directory
