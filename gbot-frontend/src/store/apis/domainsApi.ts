@@ -21,13 +21,22 @@ export const domainsApi = createApi({
   endpoints: (builder) => ({
     // List all domains
     listDomains: builder.query<ApiResponse<Domain[]>, void>({
-      query: () => 'list-domains',
+      query: () => 'get-domain-usage-stats',
+      transformResponse: (resp: any) => {
+        const domains = resp?.stats?.domains || [];
+        return { success: true, data: domains };
+      },
       providesTags: ['Domains'],
     }),
 
     // Get domain details
     getDomainDetails: builder.query<ApiResponse<Domain>, string>({
-      query: (domainName) => `domain/${domainName}`,
+      query: () => 'get-domain-usage-stats',
+      transformResponse: (resp: any, _meta, domainName: string) => {
+        const domains = resp?.stats?.domains || [];
+        const found = domains.find((d: any) => d.domain_name === domainName);
+        return { success: !!found, data: found };
+      },
       providesTags: (result, error, domainName) => [{ type: 'Domains', id: domainName }],
     }),
 
@@ -52,16 +61,20 @@ export const domainsApi = createApi({
 
     // Bulk domain change
     bulkDomainChange: builder.mutation<
-      ApiResponse<{
-        task_id: string;
-        message: string;
-      }>,
+      ApiResponse<{ message: string }>,
       BulkDomainChange
     >({
-      query: (data) => ({
-        url: 'bulk-domain-change',
+      query: ({ accounts }) => ({
+        url: 'mega-upgrade',
         method: 'POST',
-        body: data,
+        body: {
+          accounts,
+          features: { authenticate: true, changeSubdomain: true },
+        },
+      }),
+      transformResponse: (resp: any) => ({
+        success: !!resp?.success,
+        data: { message: resp?.message || 'Started' },
       }),
       invalidatesTags: ['Domains'],
     }),
@@ -77,16 +90,38 @@ export const domainsApi = createApi({
       }>,
       string
     >({
-      query: (taskId) => `check-progress/${taskId}`,
+      query: (taskId) => `mega-upgrade-progress/${taskId}`,
+      transformResponse: (resp: any) => ({
+        success: !!resp?.success,
+        data: {
+          current: resp?.progress?.completed_accounts ?? 0,
+          total: resp?.progress?.total_accounts ?? 0,
+          status: (resp?.progress?.status as any) ?? 'processing',
+          message: resp?.progress?.progress_message ?? '',
+          percentage:
+            resp?.progress?.total_accounts
+              ? Math.round(
+                  ((resp?.progress?.completed_accounts || 0) /
+                    resp?.progress?.total_accounts) *
+                    100
+                )
+              : 0,
+        },
+      }),
     }),
 
     // Get available domains count
     getAvailableDomainsCount: builder.query<ApiResponse<{ count: number }>, void>({
-      query: () => 'available-domains-count',
+      query: () => 'get-domain-usage-stats',
+      transformResponse: (resp: any) => {
+        const domains = resp?.stats?.domains || [];
+        const count = domains.filter((d: any) => d.status === 'available').length;
+        return { success: true, data: { count } };
+      },
       providesTags: ['Domains'],
     }),
 
-    // Get domain usage statistics
+    // Get domain usage statistics (map from stats endpoint)
     getDomainStats: builder.query<
       ApiResponse<{
         total_domains: number;
@@ -96,7 +131,19 @@ export const domainsApi = createApi({
       }>,
       void
     >({
-      query: () => 'domain-stats',
+      query: () => 'get-domain-usage-stats',
+      transformResponse: (resp: any) => {
+        const s = resp?.stats || {};
+        return {
+          success: true,
+          data: {
+            total_domains: s.total_domains ?? (s.domains || []).length,
+            used_domains: s.used_domains ?? 0,
+            available_domains: s.available_domains ?? 0,
+            in_use_domains: s.in_use_domains ?? 0,
+          },
+        };
+      },
       providesTags: ['Domains'],
     }),
   }),
