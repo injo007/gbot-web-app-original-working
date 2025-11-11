@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import styled from '@emotion/styled';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,9 +7,6 @@ import { selectUser } from '../store/slices/authSlice';
 import { useLogoutMutation } from '../store/apis/authApi';
 import { Button } from '../components/Button/Button';
 
-interface AppLayoutProps {
-  children: React.ReactNode;
-}
 
 const LayoutContainer = styled.div`
   display: flex;
@@ -27,7 +24,7 @@ const Sidebar = styled(motion.aside)<{ isOpen: boolean }>`
   position: fixed;
   top: 0;
   bottom: 0;
-  z-index: ${({ theme }) => theme.zIndices.sidebar};
+  z-index: ${({ theme }) => theme.zIndices.overlay};
 `;
 
 const MainContent = styled.main<{ sidebarOpen: boolean }>`
@@ -47,7 +44,7 @@ const Header = styled.header`
   padding: ${({ theme }) => `0 ${theme.spacing[4]}`};
   position: sticky;
   top: 0;
-  z-index: ${({ theme }) => theme.zIndices.header};
+  z-index: ${({ theme }) => theme.zIndices.sticky};
 `;
 
 const Logo = styled.div`
@@ -102,7 +99,7 @@ const UserName = styled.div`
   }
 `;
 
-export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
+export const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useSelector(selectUser);
@@ -189,7 +186,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.2 }}
           >
-            {children}
+            <Outlet />
           </motion.div>
         </AnimatePresence>
       </MainContent>

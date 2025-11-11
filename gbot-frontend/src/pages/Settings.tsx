@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import styled from '@emotion/styled';
 import { Card } from '../components/Card/Card';
 import { Button } from '../components/Button/Button';
 import { Input } from '../components/Input/Input';
 import {
-  useGetSettingsQuery,
-  useUpdateSettingsMutation,
-  useRunBackupMutation,
+  useGetServerConfigQuery,
+  useSaveServerConfigMutation,
+  useCreateBackupMutation,
   useCheckSystemHealthQuery,
 } from '../store/apis/settingsApi';
 import { withAuth } from '../components/auth/AuthGuard';
@@ -59,10 +59,27 @@ const StatusIndicator = styled.div<{ status: 'healthy' | 'warning' | 'error' }>`
 `;
 
 const SettingsPage: React.FC = () => {
-  const { data: settings, isLoading } = useGetSettingsQuery();
-  const [updateSettings] = useUpdateSettingsMutation();
-  const [runBackup] = useRunBackupMutation();
+  const { data: serverConfigResp, isLoading } = useGetServerConfigQuery();
+  const settings: any = (serverConfigResp as any)?.config || {};
+  const [saveServerConfig] = useSaveServerConfigMutation();
+  const [createBackup] = useCreateBackupMutation();
   const { data: healthStatus, refetch: refetchHealth } = useCheckSystemHealthQuery();
+
+  type CheckStatus = 'healthy' | 'warning' | 'error';
+  type CheckItem = { name: string; status: CheckStatus };
+
+  const checks: CheckItem[] = useMemo(() => {
+    const d = (healthStatus as any)?.data;
+    if (!d) return [];
+    const list: CheckItem[] = [];
+    list.push({ name: 'Database', status: d.database ? 'healthy' as CheckStatus : 'error' as CheckStatus });
+    list.push({ name: 'Server Connection', status: d.server_connection ? 'healthy' as CheckStatus : 'error' as CheckStatus });
+    list.push({ name: 'OTP Connection', status: d.otp_connection ? 'healthy' as CheckStatus : 'warning' as CheckStatus });
+    const used = d.disk_space?.used_percentage ?? 0;
+    const diskStatus: CheckStatus = used < 70 ? 'healthy' : used < 90 ? 'warning' : 'error';
+    list.push({ name: `Disk Usage (${used}% used)`, status: diskStatus });
+    return list;
+  }, [healthStatus]);
 
   const [error, setError] = useState<string | null>(null);
   const [backupInProgress, setBackupInProgress] = useState(false);
@@ -80,7 +97,7 @@ const SettingsPage: React.FC = () => {
     };
 
     try {
-      await updateSettings(updatedSettings).unwrap();
+      await saveServerConfig(updatedSettings as any).unwrap();
     } catch (err) {
       setError('Failed to update settings');
     }
@@ -89,7 +106,7 @@ const SettingsPage: React.FC = () => {
   const handleBackup = async () => {
     try {
       setBackupInProgress(true);
-      await runBackup().unwrap();
+      await createBackup().unwrap();
     } catch (err) {
       setError('Failed to initiate backup');
     } finally {
@@ -117,7 +134,7 @@ const SettingsPage: React.FC = () => {
         <Card>
           <h2>System Health</h2>
           <div style={{ marginTop: '16px' }}>
-            {healthStatus?.checks.map((check) => (
+            {checks.map((check) => (
               <div
                 key={check.name}
                 style={{

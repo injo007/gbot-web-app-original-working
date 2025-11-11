@@ -52,7 +52,7 @@ export const whitelistApi = createApi({
     // Emergency access request
     requestEmergencyAccess: builder.mutation<ApiResponse<{ success: boolean; message: string }>, EmergencyAccessRequest>({
       query: (data) => ({
-        url: 'emergency_access',
+        url: 'emergency-add-ip',
         method: 'POST',
         body: data,
       }),
@@ -65,7 +65,11 @@ export const whitelistApi = createApi({
 
     // Check if IP is whitelisted
     checkIPWhitelisted: builder.query<ApiResponse<{ whitelisted: boolean }>, string>({
-      query: (ip_address) => `check-ip-whitelisted/${ip_address}`,
+      query: () => `debug-whitelist`,
+      transformResponse: (resp: any, _meta, ip_address: string) => {
+        const list: string[] = resp?.whitelisted_ips || [];
+        return { success: true, data: { whitelisted: list.includes(ip_address) } };
+      },
       providesTags: (result, error, ip_address) => [{ type: 'Whitelist', id: ip_address }],
     }),
 
@@ -92,5 +96,6 @@ export const {
   useRequestEmergencyAccessMutation,
   useGetCurrentIPQuery,
   useCheckIPWhitelistedQuery,
+  useLazyCheckIPWhitelistedQuery,
   useGetWhitelistStatsQuery,
 } = whitelistApi;

@@ -7,9 +7,9 @@ import { Modal } from '../components/Modal/Modal';
 import { Input } from '../components/Input/Input';
 import {
   useListWhitelistedIPsQuery,
-  useAddWhitelistedIPMutation,
-  useRemoveWhitelistedIPMutation,
-  useCheckIPStatusQuery,
+  useAddToWhitelistMutation,
+  useDeleteFromWhitelistMutation,
+  useLazyCheckIPWhitelistedQuery,
 } from '../store/apis/whitelistApi';
 import { withAuth } from '../components/auth/AuthGuard';
 import type { WhitelistedIP } from '../store/types';
@@ -44,9 +44,9 @@ const IPStatus = styled.div<{ isWhitelisted: boolean }>`
 
 const WhitelistPage: React.FC = () => {
   const { data: ips, isLoading } = useListWhitelistedIPsQuery();
-  const [addIP] = useAddWhitelistedIPMutation();
-  const [removeIP] = useRemoveWhitelistedIPMutation();
-  const [checkIP, { data: ipStatus }] = useCheckIPStatusQuery();
+  const [addToWhitelist] = useAddToWhitelistMutation();
+  const [deleteFromWhitelist] = useDeleteFromWhitelistMutation();
+  const [triggerCheckIP, { data: ipStatus }] = useLazyCheckIPWhitelistedQuery();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +58,9 @@ const WhitelistPage: React.FC = () => {
 
     const formData = new FormData(e.currentTarget);
     const ip = formData.get('ip') as string;
-    const description = formData.get('description') as string;
 
     try {
-      await addIP({ ip, description }).unwrap();
+      await addToWhitelist(ip).unwrap();
       setIsModalOpen(false);
     } catch (err) {
       setError('Failed to add IP to whitelist');
@@ -71,7 +70,7 @@ const WhitelistPage: React.FC = () => {
   const handleRemove = async (ip: string) => {
     if (window.confirm('Are you sure you want to remove this IP from the whitelist?')) {
       try {
-        await removeIP(ip).unwrap();
+        await deleteFromWhitelist(ip).unwrap();
       } catch (err) {
         setError('Failed to remove IP from whitelist');
       }
@@ -83,35 +82,30 @@ const WhitelistPage: React.FC = () => {
     const formData = new FormData(e.currentTarget);
     const ip = formData.get('check_ip') as string;
     setCheckedIP(ip);
-    await checkIP(ip);
+    await triggerCheckIP(ip);
   };
 
   const columns = [
     {
-      key: 'ip',
+      key: 'ip_address',
       title: 'IP Address',
-      width: '30%',
+      width: '50%',
     },
     {
-      key: 'description',
-      title: 'Description',
-      width: '40%',
-    },
-    {
-      key: 'added_at',
+      key: 'added_date',
       title: 'Added',
-      width: '15%',
+      width: '25%',
       render: (value: string) => new Date(value).toLocaleDateString(),
     },
     {
       key: 'actions',
       title: 'Actions',
-      width: '15%',
+      width: '25%',
       render: (_: any, row: WhitelistedIP) => (
         <Button
           size="sm"
           variant="danger"
-          onClick={() => handleRemove(row.ip)}
+          onClick={() => handleRemove(row.ip_address)}
         >
           Remove
         </Button>
@@ -148,8 +142,8 @@ const WhitelistPage: React.FC = () => {
           </div>
         </Form>
         {ipStatus && checkedIP && (
-          <IPStatus isWhitelisted={ipStatus.is_whitelisted}>
-            {checkedIP} is {ipStatus.is_whitelisted ? 'whitelisted' : 'not whitelisted'}
+          <IPStatus isWhitelisted={!!(ipStatus as any).data?.whitelisted}>
+            {checkedIP} is {(ipStatus as any).data?.whitelisted ? 'whitelisted' : 'not whitelisted'}
           </IPStatus>
         )}
       </Card>
@@ -160,7 +154,7 @@ const WhitelistPage: React.FC = () => {
           data={ips?.data || []}
           isLoading={isLoading}
           emptyMessage="No whitelisted IPs found"
-          rowKey="ip"
+          rowKey="ip_address"
         />
       </Card>
 

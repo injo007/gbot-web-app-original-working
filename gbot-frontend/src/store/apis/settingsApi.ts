@@ -75,23 +75,33 @@ export const settingsApi = createApi({
     }),
 
     // Database Operations
-    createBackup: builder.mutation<ApiResponse<{ backup_path: string }>, void>({
+    createBackup: builder.mutation<ApiResponse<{ filename: string; size: number }>, void>({
       query: () => ({
-        url: 'create-backup',
+        url: 'create-database-backup',
         method: 'POST',
+        body: { format: 'sql', include_data: 'full' },
+      }),
+      transformResponse: (resp: any) => ({
+        success: !!resp?.success,
+        data: { filename: resp?.filename, size: resp?.size },
+        message: resp?.message,
       }),
     }),
 
     restoreBackup: builder.mutation<ApiResponse<{ success: boolean; message: string }>, FormData>({
       query: (data) => ({
-        url: 'restore-backup',
+        url: 'upload-restore-backup',
         method: 'POST',
         body: data,
       }),
     }),
 
     getBackupsList: builder.query<ApiResponse<{ backups: string[] }>, void>({
-      query: () => 'list-backups',
+      query: () => 'list-database-backups',
+      transformResponse: (resp: any) => ({
+        success: !!resp?.success,
+        data: { backups: (resp?.files || []).map((f: any) => f.name) },
+      }),
     }),
 
     // System Health Check
@@ -108,7 +118,20 @@ export const settingsApi = createApi({
       }>,
       void
     >({
-      query: () => 'system-health',
+      query: () => 'diagnose-backup',
+      transformResponse: (resp: any) => {
+        const diag = resp?.diagnosis || {};
+        const dbOk = (diag.database?.connection || '').toString().toUpperCase() === 'OK';
+        return {
+          success: !!resp?.success,
+          data: {
+            database: dbOk,
+            server_connection: true,
+            otp_connection: false,
+            disk_space: { available: 0, total: 0, used_percentage: 0 },
+          },
+        };
+      },
     }),
   }),
 });

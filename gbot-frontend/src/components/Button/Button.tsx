@@ -1,9 +1,10 @@
 import React from 'react';
 import styled from '@emotion/styled';
 import { motion } from 'framer-motion';
-import { useTheme } from '../../theme/ThemeProvider';
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+type NativeButtonProps = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onAnimationStart'>;
+
+export interface ButtonProps extends NativeButtonProps {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
@@ -12,7 +13,16 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   fullWidth?: boolean;
 }
 
-const StyledButton = styled(motion.button)<ButtonProps>`
+type StyledButtonProps = {
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  size?: 'sm' | 'md' | 'lg';
+  isLoading?: boolean;
+  fullWidth?: boolean;
+};
+
+type MotionStyledProps = StyledButtonProps;
+
+const StyledButton = styled.button<MotionStyledProps>`
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -115,6 +125,11 @@ const LoadingSpinner = styled(motion.div)`
   border-radius: 50%;
 `;
 
+const TapWrapper = styled(motion.div)<{ fullWidth?: boolean }>`
+  display: inline-block;
+  width: ${({ fullWidth }) => (fullWidth ? '100%' : 'auto')};
+`;
+
 export const Button: React.FC<ButtonProps> = ({
   children,
   variant = 'primary',
@@ -136,20 +151,21 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   return (
-    <StyledButton
-      variant={variant}
-      size={size}
-      isLoading={isLoading}
-      disabled={disabled || isLoading}
-      fullWidth={fullWidth}
-      whileTap={{ scale: 0.98 }}
-      {...props}
-    >
+    <TapWrapper whileTap={{ scale: 0.98 }} fullWidth={fullWidth}>
+      <StyledButton
+        variant={variant}
+        size={size}
+        isLoading={isLoading}
+        disabled={disabled || isLoading}
+        fullWidth={fullWidth}
+        {...props}
+      >
       {leftIcon && <span>{leftIcon}</span>}
       {children}
       {rightIcon && <span>{rightIcon}</span>}
       {isLoading && <LoadingSpinner animate={spinnerAnimation} />}
-    </StyledButton>
+      </StyledButton>
+    </TapWrapper>
   );
 };
 
