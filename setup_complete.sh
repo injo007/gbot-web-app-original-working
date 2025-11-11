@@ -84,42 +84,28 @@ setup_frontend() {
     sudo sysctl -w vm.max_map_count=262144 2>/dev/null || true
     sudo sysctl -w fs.file-max=65535 2>/dev/null || true
 
-    # Install required system packages
-    log "Installing system dependencies..."
-    if ! sudo apt-get update; then
-        log_error "Failed to update package lists"
+    # Fix any interrupted dpkg configurations
+    log "Checking dpkg configuration..."
+    if ! sudo dpkg --configure -a; then
+        log_error "Failed to configure dpkg"
         exit 1
     fi
 
-    # Install packages with retry logic
-    install_packages() {
-        local max_retries=3
-        local retry_count=0
-        local packages="$1"
-
-        while [ $retry_count -lt $max_retries ]; do
-            if sudo apt-get install -y $packages; then
-                return 0
-            fi
-            retry_count=$((retry_count + 1))
-            log_warning "Package installation failed, retrying in 5 seconds... (attempt $retry_count/$max_retries)"
-            sleep 5
-            sudo apt-get update
-        done
-        return 1
-    }
-
+    # Install required system packages
+    log "Installing system dependencies..."
+    # Skip apt-get update as it's handled manually by the server admin
+    
     # Install required packages
-    if ! install_packages "curl wget git build-essential python3 python3-pip nginx libssl-dev pkg-config libpq-dev"; then
+    if ! sudo apt-get install -y curl wget git build-essential python3 python3-pip nginx libssl-dev pkg-config libpq-dev; then
         log_error "Failed to install required system packages"
         exit 1
     fi
 
-    # Check and setup Node.js 18.x
+    # Check and setup Node.js LTS
     setup_nodejs() {
         if command -v node &> /dev/null; then
             current_version=$(node -v)
-            if [[ "$current_version" =~ ^v18 ]]; then
+            if [[ "$current_version" =~ ^v20 ]]; then
                 log "Node.js $current_version is already installed"
                 return 0
             fi
@@ -131,14 +117,14 @@ setup_frontend() {
             sudo rm -f /etc/apt/sources.list.d/nodesource.list 2>/dev/null || true
         fi
 
-        # Install Node.js 18.x
-        log "Installing Node.js 18.x..."
-        if ! curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -; then
+        # Install Node.js 20.x (LTS)
+        log "Installing Node.js 20.x LTS..."
+        if ! curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >/dev/null 2>&1; then
             log_error "Failed to setup Node.js repository"
             return 1
         fi
         
-        sudo apt-get update
+        # Skip apt-get update as it's handled manually
         if ! sudo apt-get install -y nodejs; then
             log_error "Failed to install Node.js"
             return 1
@@ -151,8 +137,8 @@ setup_frontend() {
         fi
 
         current_version=$(node -v)
-        if [[ ! "$current_version" =~ ^v18 ]]; then
-            log_error "Wrong Node.js version. Expected v18.x, got $current_version"
+        if [[ ! "$current_version" =~ ^v20 ]]; then
+            log_error "Wrong Node.js version. Expected v20.x, got $current_version"
             return 1
         fi
 
@@ -404,10 +390,15 @@ dist
     # Create fresh static directory
     mkdir -p "$FRONTEND_STATIC"
 
-    # Clean up old templates
+    # Remove old frontend templates completely
     if [ -d "$SCRIPT_DIR/templates" ]; then
-        log "Removing old template files..."
-        rm -rf "$SCRIPT_DIR/templates"
+        log "Removing old frontend templates..."
+        sudo rm -rf "$SCRIPT_DIR/templates"
+        # Remove any template references from app.py
+        sed -i '/render_template/d' "$SCRIPT_DIR/app.py"
+        sed -i '/from flask import.*render_template/s/render_template, //g' "$SCRIPT_DIR/app.py"
+        sed -i '/from flask import.*render_template/s/, render_template//g' "$SCRIPT_DIR/app.py"
+        sed -i '/from flask import render_template/d' "$SCRIPT_DIR/app.py"
     fi
 
     # Clean up old fix files
@@ -500,8 +491,8 @@ dist
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=8.0.0"
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   },
   "scripts": {
     "dev": "vite",
