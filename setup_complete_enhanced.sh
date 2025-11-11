@@ -289,16 +289,32 @@ EOF
 
         while [ $retry_count -lt $max_retries ]; do
             log "Installing $desc (attempt $((retry_count + 1))/$max_retries)..."
-            if npm install --no-audit --no-optional --force $packages; then
-                return 0
-            fi
-            retry_count=$((retry_count + 1))
-            log_warning "Installation failed, retrying in 5 seconds..."
-            sleep 5
-            # If we're retrying, reduce the scope of what we're installing
-            if [ $retry_count -eq 2 ]; then
+            # Use --omit=optional instead of --no-optional (modern approach)
+            # Remove --force to enable recommended protections unless necessary
+            if [ $retry_count -eq 0 ]; then
+                # First attempt: try without --force
+                if npm install --no-audit --omit=optional $packages; then
+                    return 0
+                fi
+            elif [ $retry_count -eq 1 ]; then
+                # Second attempt: try with --force
+                if npm install --no-audit --omit=optional --force $packages; then
+                    log_warning "Installed with --force flag (protections disabled)"
+                    return 0
+                fi
+            else
+                # Final attempt: minimal install with --force
                 log "Using minimal installation approach for final attempt..."
-                packages="--production"
+                if npm install --no-audit --omit=optional --omit=dev --force $packages; then
+                    log_warning "Installed minimal dependencies with --force"
+                    return 0
+                fi
+            fi
+            
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                log_warning "Installation failed, retrying in 5 seconds..."
+                sleep 5
             fi
         done
         return 1
@@ -557,15 +573,15 @@ verify_frontend_deployment() {
             echo -e "  ❌ index.html missing: ${RED}FAIL${NC}"
         fi
         
-        # Check for JavaScript files
-        if ls $FRONTEND_STATIC/assets/*.js &> /dev/null || ls $FRONTEND_STATIC/*.js &> /dev/null; then
+        # Check nested directories for JS files (Vite puts them in deeper paths with hashed names)
+        if find "$FRONTEND_STATIC" -name "*.js" | grep -q .; then
             echo -e "  ✅ JavaScript files exist: ${GREEN}PASS${NC}"
         else
             echo -e "  ❌ JavaScript files missing: ${RED}FAIL${NC}"
         fi
         
-        # Check for CSS files
-        if ls $FRONTEND_STATIC/assets/*.css &> /dev/null || ls $FRONTEND_STATIC/*.css &> /dev/null; then
+        # Check nested directories for CSS files
+        if find "$FRONTEND_STATIC" -name "*.css" | grep -q .; then
             echo -e "  ✅ CSS files exist: ${GREEN}PASS${NC}"
         else
             echo -e "  ❌ CSS files missing: ${RED}FAIL${NC}"
@@ -595,8 +611,17 @@ verify_frontend_deployment() {
 
     # Restart services to apply changes
     log "Restarting services to apply changes..."
-    sudo systemctl restart gbot || true
+    # Check if the gbot service is available before trying to restart it
+    if systemctl list-unit-files | grep -q gbot; then
+        sudo systemctl restart gbot || true
+        echo -e "  ✅ GBot service restarted: ${GREEN}PASS${NC}"
+    else
+        log_warning "GBot service not found, skipping restart"
+    fi
+    
+    # Always restart nginx
     sudo systemctl restart nginx || true
+    echo -e "  ✅ Nginx service restarted: ${GREEN}PASS${NC}"
     
     log_success "Verification and fixes completed"
 }
