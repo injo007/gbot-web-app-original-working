@@ -84,17 +84,104 @@ setup_frontend() {
     sudo sysctl -w vm.max_map_count=262144 2>/dev/null || true
     sudo sysctl -w fs.file-max=65535 2>/dev/null || true
 
-    # Install Node.js and npm if not present
-    if ! command -v node &> /dev/null; then
-        log "Installing Node.js..."
-        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-        sudo apt-get update
-        sudo apt-get install -y nodejs build-essential
+    # Install required system packages
+    log "Installing system dependencies..."
+    if ! sudo apt-get update; then
+        log_error "Failed to update package lists"
+        exit 1
     fi
 
-    # Verify Node.js installation
-    if ! command -v node &> /dev/null; then
-        log_error "Node.js installation failed"
+    # Install packages with retry logic
+    install_packages() {
+        local max_retries=3
+        local retry_count=0
+        local packages="$1"
+
+        while [ $retry_count -lt $max_retries ]; do
+            if sudo apt-get install -y $packages; then
+                return 0
+            fi
+            retry_count=$((retry_count + 1))
+            log_warning "Package installation failed, retrying in 5 seconds... (attempt $retry_count/$max_retries)"
+            sleep 5
+            sudo apt-get update
+        done
+        return 1
+    }
+
+    # Install required packages
+    if ! install_packages "curl wget git build-essential python3 python3-pip nginx libssl-dev pkg-config libpq-dev"; then
+        log_error "Failed to install required system packages"
+        exit 1
+    fi
+
+    # Check and setup Node.js 18.x
+    setup_nodejs() {
+        if command -v node &> /dev/null; then
+            current_version=$(node -v)
+            if [[ "$current_version" =~ ^v18 ]]; then
+                log "Node.js $current_version is already installed"
+                return 0
+            fi
+            
+            log "Removing old Node.js version $current_version..."
+            sudo apt-get remove -y nodejs npm || true
+            sudo apt-get -y autoremove || true
+            sudo rm -rf /usr/local/bin/npm /usr/local/share/man/man1/node* /usr/local/lib/dtrace/node.d ~/.npm ~/.node-gyp /opt/local/bin/node /opt/local/include/node /opt/local/lib/node_modules 2>/dev/null || true
+            sudo rm -f /etc/apt/sources.list.d/nodesource.list 2>/dev/null || true
+        fi
+
+        # Install Node.js 18.x
+        log "Installing Node.js 18.x..."
+        if ! curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -; then
+            log_error "Failed to setup Node.js repository"
+            return 1
+        fi
+        
+        sudo apt-get update
+        if ! sudo apt-get install -y nodejs; then
+            log_error "Failed to install Node.js"
+            return 1
+        fi
+
+        # Verify installation
+        if ! command -v node &> /dev/null; then
+            log_error "Node.js installation verification failed"
+            return 1
+        fi
+
+        current_version=$(node -v)
+        if [[ ! "$current_version" =~ ^v18 ]]; then
+            log_error "Wrong Node.js version. Expected v18.x, got $current_version"
+            return 1
+        fi
+
+        log_success "Node.js $current_version installed successfully"
+        return 0
+    }
+
+    # Setup Node.js
+    if ! setup_nodejs; then
+        log_error "Failed to setup Node.js"
+        exit 1
+    fi
+
+    # Install latest npm
+    log "Installing latest npm..."
+    sudo npm install -g npm@latest
+
+    # Install required global packages
+    log "Installing global packages..."
+    sudo npm install -g \
+        typescript@latest \
+        @types/node@latest \
+        vite@latest \
+        @vitejs/plugin-react@latest
+
+    # Verify global packages
+    log "Verifying global packages..."
+    if ! command -v tsc &> /dev/null || ! command -v vite &> /dev/null; then
+        log_error "Global package installation failed"
         exit 1
     fi
 
@@ -103,7 +190,178 @@ setup_frontend() {
     if [ ! -d "$FRONTEND_DIR/src" ]; then
         mkdir -p "$FRONTEND_DIR"/{src,public,dist,node_modules}
         mkdir -p "$FRONTEND_DIR/src"/{components,pages,store,theme,api,layouts}
-        log_success "Directory structure created"
+        
+        # Create base TypeScript config
+        echo '{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}' > "$FRONTEND_DIR/tsconfig.json"
+
+        # Create Vite config
+        echo 'import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:5000",
+        changeOrigin: true,
+      },
+    },
+  },
+});' > "$FRONTEND_DIR/vite.config.ts"
+
+        # Create main entry files
+        echo '<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GBot Web App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>' > "$FRONTEND_DIR/index.html"
+
+        echo 'import React from "react";
+import ReactDOM from "react-dom/client";
+import { Provider } from "react-redux";
+import { store } from "./store";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <Provider store={store}>
+      <App />
+    </Provider>
+  </React.StrictMode>
+);' > "$FRONTEND_DIR/src/main.tsx"
+
+        echo 'import { BrowserRouter } from "react-router-dom";
+import { AppLayout } from "./layouts/AppLayout";
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppLayout />
+    </BrowserRouter>
+  );
+}
+
+export default App;' > "$FRONTEND_DIR/src/App.tsx"
+
+        echo ':root {
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --secondary: #64748b;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --background: #ffffff;
+  --text: #0f172a;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--background);
+  color: var(--text);
+}' > "$FRONTEND_DIR/src/index.css"
+
+        # Create store
+        echo 'import { configureStore } from "@reduxjs/toolkit";
+import { setupListeners } from "@reduxjs/toolkit/query";
+
+export const store = configureStore({
+  reducer: {},
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat([]),
+});
+
+setupListeners(store.dispatch);
+
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;' > "$FRONTEND_DIR/src/store/index.ts"
+
+        # Create AppLayout
+        echo 'import { Routes, Route } from "react-router-dom";
+
+export const AppLayout = () => {
+  return (
+    <div className="app">
+      <Routes>
+        <Route path="/" element={<div>Welcome to GBot</div>} />
+      </Routes>
+    </div>
+  );
+};' > "$FRONTEND_DIR/src/layouts/AppLayout.tsx"
+
+        # Create tsconfig.node.json
+        echo '{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts"]
+}' > "$FRONTEND_DIR/tsconfig.node.json"
+
+        # Create .env files
+        echo 'VITE_API_URL=/api' > "$FRONTEND_DIR/.env.development"
+        echo 'VITE_API_URL=/api' > "$FRONTEND_DIR/.env.production"
+
+        # Create .gitignore
+        echo 'node_modules
+dist
+.env.local
+.env.*.local
+*.log
+.DS_Store' > "$FRONTEND_DIR/.gitignore"
+
+        log_success "Directory structure and base files created"
     else
         log "Using existing directory structure"
     fi
@@ -177,13 +435,27 @@ setup_frontend() {
         fi
     fi
 
-    # No need to copy files if we're already in the right place
-    if [ "$SCRIPT_DIR" != "$FRONTEND_DIR" ] && [ -d "$SCRIPT_DIR/gbot-frontend" ]; then
-        log "Copying frontend files from current directory..."
-        rsync -a --delete "$SCRIPT_DIR/gbot-frontend/" "$FRONTEND_DIR/" || {
-            log_error "Failed to copy frontend files"
-            exit 1
-        }
+    # Handle frontend files based on current location
+    if [ "$SCRIPT_DIR" = "$FRONTEND_DIR" ]; then
+        log "Already in frontend directory, no need to copy files"
+    elif [ -d "$SCRIPT_DIR/gbot-frontend" ]; then
+        # Create a temporary directory for copying
+        TMP_DIR=$(mktemp -d)
+        log "Copying frontend files via temporary directory..."
+        
+        # Copy files to temp directory first
+        cp -r "$SCRIPT_DIR/gbot-frontend/"* "$TMP_DIR/" 2>/dev/null || true
+        
+        # Then move from temp to final location
+        rm -rf "$FRONTEND_DIR"
+        mkdir -p "$FRONTEND_DIR"
+        mv "$TMP_DIR/"* "$FRONTEND_DIR/"
+        rm -rf "$TMP_DIR"
+        
+        log_success "Frontend files copied successfully"
+    else
+        log_error "Frontend source directory not found"
+        exit 1
     fi
     
     log_success "Frontend directory setup completed"
@@ -217,7 +489,54 @@ setup_frontend() {
 
     # Install dependencies with increased memory limit and error handling
     log "Installing frontend dependencies..."
-    export NODE_OPTIONS="--max-old-space-size=2048"
+    export NODE_OPTIONS="--max-old-space-size=4096"
+    
+    # Create package.json if it doesn't exist
+    if [ ! -f "package.json" ]; then
+        log "Initializing package.json..."
+        echo '{
+  "name": "gbot-web-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\""
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@reduxjs/toolkit": "^1.9.5",
+    "axios": "^1.4.0",
+    "framer-motion": "^10.12.16",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^8.0.7",
+    "react-router-dom": "^6.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.2.5",
+    "@types/react": "^18.2.8",
+    "@types/react-dom": "^18.2.4",
+    "@typescript-eslint/eslint-plugin": "^5.59.8",
+    "@typescript-eslint/parser": "^5.59.8",
+    "@vitejs/plugin-react": "^4.0.0",
+    "eslint": "^8.42.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.1",
+    "prettier": "^2.8.8",
+    "typescript": "^5.1.3",
+    "vite": "^4.3.9"
+  }
+}' > package.json
+    fi
     
     # Create temporary swap space to handle memory-intensive operations
     SWAP_FILE="/swapfile"
@@ -504,6 +823,86 @@ run_complete_installation() {
     sudo systemctl restart nginx
 
     # ... (keep rest of the function) ...
+}
+
+# Main function with frontend options
+main() {
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -i|--install)
+                INSTALL_MODE="complete"
+                shift
+                ;;
+            -r|--reinstall)
+                FORCE_REINSTALL=true
+                INSTALL_MODE="complete"
+                shift
+                ;;
+            --setup-frontend)
+                setup_frontend
+                update_nginx_config
+                sudo systemctl restart gbot nginx
+                verify_frontend_deployment
+                exit 0
+                ;;
+            --update-frontend)
+                setup_frontend
+                update_nginx_config
+                sudo systemctl restart gbot nginx
+                verify_frontend_deployment
+                exit 0
+                ;;
+            --fix-frontend)
+                fix_frontend_issues
+                exit 0
+                ;;
+            --verify-frontend)
+                verify_frontend_deployment
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+
+    # Run complete installation if no specific option is provided
+    if [ "$INSTALL_MODE" = "complete" ]; then
+        run_complete_installation
+    else
+        show_help
+    fi
+}
+
+# Show help text
+show_help() {
+    echo "GBot Web Application Setup Script"
+    echo
+    echo "Usage: $0 [options]"
+    echo
+    echo "Options:"
+    echo "  -h, --help              Show this help message"
+    echo "  -i, --install           Run complete installation"
+    echo "  -r, --reinstall         Force reinstallation"
+    echo "  --setup-frontend        Set up new React frontend"
+    echo "  --update-frontend       Update existing frontend"
+    echo "  --fix-frontend          Fix frontend deployment issues"
+    echo "  --verify-frontend       Verify frontend deployment"
+    echo
+    echo "Examples:"
+    echo "  $0 --setup-frontend     # Set up new React frontend"
+    echo "  $0 --fix-frontend       # Fix frontend deployment issues"
+    echo "  $0 --verify-frontend    # Verify frontend deployment"
+    echo
+    echo "Note: This script requires root privileges for some operations."
+    echo "      Run with sudo if necessary."
 }
 
 # Main function with frontend options
