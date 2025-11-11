@@ -54,21 +54,21 @@ fi
 install_system_dependencies() {
     log "Installing system dependencies..."
     
-    apt update
-    apt upgrade -y
+    apt-get update
+    apt-get upgrade -y
     
     # Install Node.js
     if ! command -v node &> /dev/null; then
         log "Installing Node.js..."
         curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt install -y nodejs
+        apt-get install -y nodejs
         log_success "Node.js $(node -v) installed"
     else
         log_success "Node.js $(node -v) already installed"
     fi
     
     # Install other dependencies
-    apt install -y git nginx python3 python3-pip python3-venv libssl-dev pkg-config libpq-dev
+    apt-get install -y git nginx python3 python3-pip python3-venv libssl-dev pkg-config libpq-dev
     log_success "System dependencies installed"
 }
 
@@ -593,11 +593,24 @@ verify_installation() {
 main() {
     log "Starting GBot automatic full installation..."
 
-    # Check if script is running inside project directory
-    if [ ! -f "$PROJECT_DIR/app.py" ]; then
-        log_error "This script must be run from inside the $PROJECT_DIR directory. Current dir: $SCRIPT_DIR"
-        exit 1
+    # Check if PROJECT_DIR exists or create it
+    if [ ! -d "$PROJECT_DIR" ]; then
+        log "Project directory does not exist. Creating it at $PROJECT_DIR..."
+        mkdir -p "$PROJECT_DIR"
+        log_success "Project directory created."
     fi
+    
+    # Check if we're in PROJECT_DIR or copy files there
+    if [ "$SCRIPT_DIR" != "$PROJECT_DIR" ]; then
+        log "Script is running from $SCRIPT_DIR, copying files to $PROJECT_DIR..."
+        # Copy all files from current directory to PROJECT_DIR
+        cp -r "$SCRIPT_DIR"/* "$PROJECT_DIR"/ || log_warning "Some files could not be copied."
+        log_success "Files copied to $PROJECT_DIR"
+    fi
+    
+    # Change to project directory
+    cd "$PROJECT_DIR"
+    log "Working in directory: $(pwd)"
     
     install_system_dependencies
     setup_python_environment
