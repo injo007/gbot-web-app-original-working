@@ -173,9 +173,26 @@ setup_postgresql() {
     DB_USER="gbot_user"
     DB_PASS=$(openssl rand -hex 12)
     
-    # Create database and user
-    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
-    sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
+    # Check if database exists
+    if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+        log_warning "Database $DB_NAME already exists, skipping database creation"
+    else
+        # Create database
+        log "Creating database $DB_NAME..."
+        sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
+    fi
+    
+    # Check if user exists
+    if sudo -u postgres psql -t -c "SELECT 1 FROM pg_user WHERE usename = '$DB_USER';" | grep -q 1; then
+        log_warning "User $DB_USER already exists, updating password..."
+        sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';"
+    else
+        # Create user
+        log "Creating user $DB_USER..."
+        sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
+    fi
+    
+    # Grant privileges (this is safe to run multiple times)
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
     
     # Save database credentials
