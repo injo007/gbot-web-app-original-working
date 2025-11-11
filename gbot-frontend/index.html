@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0078d4" />
+    <meta name="description" content="GBot Web App - Google Workspace Management" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <!-- Preload fonts -->
+    <link
+      rel="preload"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    
+    <!-- Fallback for font preload -->
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+
+    <title>GBot Web App</title>
+
+    <!-- Prevent flash of unstyled content -->
+    <style>
+      html {
+        background: #fff;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        html {
+          background: #1a1a1a;
+        }
+      }
+
+      /* Loading spinner */
+      .initial-loader {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 40px;
+        height: 40px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #0078d4;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        display: none;
+      }
+
+      #root:empty + .initial-loader {
+        display: block;
+      }
+
+      @keyframes spin {
+        0% { transform: translate(-50%, -50%) rotate(0deg); }
+        100% { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div class="initial-loader"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Error boundary for production -->
+    <script>
+      window.onerror = function(message, source, lineno, colno, error) {
+        // Only show error UI if the app hasn't loaded yet
+        if (!document.getElementById('root').children.length) {
+          document.body.innerHTML = `
+            <div style="
+              position: fixed;
+              top: 50%;
+              left: 50%;
+              transform: translate(-50%, -50%);
+              text-align: center;
+              font-family: system-ui, -apple-system, sans-serif;
+            ">
+              <h1 style="color: #d32f2f; margin-bottom: 16px;">Something went wrong</h1>
+              <p style="color: #666;">Please try refreshing the page.</p>
+              <button
+                onclick="window.location.reload()"
+                style="
+                  margin-top: 24px;
+                  padding: 8px 16px;
+                  background: #0078d4;
+                  color: white;
+                  border: none;
+                  border-radius: 4px;
+                  cursor: pointer;
+                "
+              >
+                Refresh Page
+              </button>
+            </div>
+          `;
+        }
+        // Log error to monitoring service in production
+        console.error(error);
+        return false;
+      };
+    </script>
+  </body>
+</html>
