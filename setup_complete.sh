@@ -48,11 +48,17 @@ log_error() {
 setup_frontend() {
     log "Setting up frontend..."
 
+    # Increase system limits for the build process
+    ulimit -n 65535 2>/dev/null || true
+    sudo sysctl -w vm.max_map_count=262144 2>/dev/null || true
+    sudo sysctl -w fs.file-max=65535 2>/dev/null || true
+
     # Install Node.js and npm if not present
     if ! command -v node &> /dev/null; then
         log "Installing Node.js..."
         curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-        sudo apt-get install -y nodejs
+        sudo apt-get update
+        sudo apt-get install -y nodejs build-essential
     fi
 
     # Verify Node.js installation
@@ -60,6 +66,11 @@ setup_frontend() {
         log_error "Node.js installation failed"
         exit 1
     fi
+
+    # Create frontend directory structure
+    log "Creating frontend directory structure..."
+    mkdir -p "$FRONTEND_DIR"/{src,public,dist,node_modules}
+    mkdir -p "$FRONTEND_DIR/src"/{components,pages,store,theme,api,layouts}
 
     # Backup existing static files
     if [ -d "$FRONTEND_STATIC" ]; then
@@ -70,16 +81,122 @@ setup_frontend() {
     # Create static directory
     mkdir -p "$FRONTEND_STATIC"
 
+    # Copy frontend files with proper error handling
+    log "Copying frontend files..."
+    if [ -d "gbot-frontend" ]; then
+        cp -r gbot-frontend/* "$FRONTEND_DIR/" || {
+            log_error "Failed to copy frontend files"
+            exit 1
+        }
+    else
+        log_error "Frontend source directory 'gbot-frontend' not found"
+        exit 1
+    fi
+
+    # Verify critical files
+    log "Verifying frontend files..."
+    REQUIRED_FILES=(
+        "package.json"
+        "tsconfig.json"
+        "vite.config.ts"
+        "src/main.tsx"
+        "src/App.tsx"
+        "index.html"
+    )
+    
+    for file in "${REQUIRED_FILES[@]}"; do
+        if [ ! -f "$FRONTEND_DIR/$file" ]; then
+            log_error "Missing required file: $file"
+            exit 1
+        fi
+    done
+
     # Build frontend
     log "Building frontend..."
     cd "$FRONTEND_DIR"
-    
-    # Install dependencies
-    log "Installing frontend dependencies..."
-    npm install
 
-    # Build the application
-    npm run build
+    # Clear npm cache and remove node_modules
+    log "Cleaning npm cache..."
+    npm cache clean --force
+    rm -rf node_modules package-lock.json dist
+
+    # Install dependencies with increased memory limit and error handling
+    log "Installing frontend dependencies..."
+    export NODE_OPTIONS="--max-old-space-size=2048"
+    
+    # Create temporary swap space to handle memory-intensive operations
+    SWAP_FILE="/swapfile"
+    if [ ! -f "$SWAP_FILE" ]; then
+        log "Creating temporary swap space..."
+        sudo fallocate -l 2G "$SWAP_FILE" || sudo dd if=/dev/zero of="$SWAP_FILE" bs=1M count=2048
+        sudo chmod 600 "$SWAP_FILE"
+        sudo mkswap "$SWAP_FILE"
+        sudo swapon "$SWAP_FILE"
+    fi
+
+    # Install dependencies in chunks with retry logic
+    install_with_retry() {
+        local max_retries=3
+        local retry_count=0
+        local packages="$1"
+        local desc="$2"
+
+        while [ $retry_count -lt $max_retries ]; do
+            log "Installing $desc (attempt $((retry_count + 1))/$max_retries)..."
+            if npm install --no-audit --no-optional --production=false $packages; then
+                return 0
+            fi
+            retry_count=$((retry_count + 1))
+            log_warning "Installation failed, retrying in 5 seconds..."
+            sleep 5
+        done
+        return 1
+    }
+
+    # Core dependencies
+    if ! install_with_retry "react react-dom @reduxjs/toolkit react-redux react-router-dom axios" "core dependencies"; then
+        log_error "Failed to install core dependencies"
+        sudo swapoff "$SWAP_FILE"
+        sudo rm "$SWAP_FILE"
+        exit 1
+    fi
+
+    # UI dependencies
+    if ! install_with_retry "@emotion/react @emotion/styled framer-motion" "UI dependencies"; then
+        log_error "Failed to install UI dependencies"
+        sudo swapoff "$SWAP_FILE"
+        sudo rm "$SWAP_FILE"
+        exit 1
+    fi
+
+    # Dev dependencies
+    if ! install_with_retry "--save-dev typescript @types/react @types/react-dom @vitejs/plugin-react vite" "dev dependencies"; then
+        log_error "Failed to install dev dependencies"
+        sudo swapoff "$SWAP_FILE"
+        sudo rm "$SWAP_FILE"
+        exit 1
+    fi
+
+    # Verify critical dependencies
+    log "Verifying dependencies..."
+    if ! npm list react >/dev/null 2>&1 || ! npm list vite >/dev/null 2>&1; then
+        log_error "Critical dependencies are missing"
+        sudo swapoff "$SWAP_FILE"
+        sudo rm "$SWAP_FILE"
+        exit 1
+    fi
+
+    # Remove temporary swap
+    sudo swapoff "$SWAP_FILE"
+    sudo rm "$SWAP_FILE"
+
+    # Build the application with production optimization
+    log "Building production bundle..."
+    export NODE_OPTIONS="--max-old-space-size=2048"
+    GENERATE_SOURCEMAP=false npm run build || {
+        log_error "Failed to build frontend"
+        exit 1
+    }
 
     # Verify build
     if [ ! -d "$FRONTEND_DIST" ]; then
@@ -111,18 +228,48 @@ EOF
 
     # Copy new frontend files to static directory
     log "Copying frontend files..."
-    cp -r "$FRONTEND_DIST"/* "$FRONTEND_STATIC/"
+    if [ -d "$FRONTEND_DIST" ]; then
+        cp -r "$FRONTEND_DIST"/* "$FRONTEND_STATIC/"
+        
+        # Set proper permissions
+        sudo chown -R www-data:www-data "$FRONTEND_STATIC"
+        sudo chmod -R 755 "$FRONTEND_STATIC"
 
-    # Set proper permissions
-    sudo chown -R www-data:www-data "$FRONTEND_STATIC"
-    sudo chmod -R 755 "$FRONTEND_STATIC"
+        # Verify critical files
+        if [ -f "$FRONTEND_STATIC/index.html" ]; then
+            log_success "Frontend files copied successfully"
+        else
+            log_error "Frontend build files are incomplete"
+            # Restore backup if exists
+            if [ -d "$FRONTEND_BACKUP" ]; then
+                rm -rf "$FRONTEND_STATIC"
+                mv "$FRONTEND_BACKUP" "$FRONTEND_STATIC"
+                log_warning "Restored previous version from backup"
+            fi
+            exit 1
+        fi
 
-    # Clean up backup if everything succeeded
-    if [ -d "$FRONTEND_BACKUP" ]; then
-        rm -rf "$FRONTEND_BACKUP"
+        # Clean up backup if everything succeeded
+        if [ -d "$FRONTEND_BACKUP" ]; then
+            rm -rf "$FRONTEND_BACKUP"
+        fi
+
+        # Clean up build artifacts
+        log "Cleaning up build artifacts..."
+        rm -rf node_modules
+        npm cache clean --force
+
+        log_success "Frontend setup completed"
+    else
+        log_error "Frontend build failed - dist directory not found"
+        # Restore backup if exists
+        if [ -d "$FRONTEND_BACKUP" ]; then
+            rm -rf "$FRONTEND_STATIC"
+            mv "$FRONTEND_BACKUP" "$FRONTEND_STATIC"
+            log_warning "Restored previous version from backup"
+        fi
+        exit 1
     fi
-
-    log_success "Frontend setup completed"
 }
 
 update_nginx_config() {
