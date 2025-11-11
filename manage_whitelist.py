@@ -1,49 +1,153 @@
+#!/usr/bin/env python3
+"""
+IP Whitelist Management Tool for GBot Web App
+This tool allows you to manage IP whitelist from the command line
+"""
 
 import os
 import sys
-import psycopg2
+import argparse
+import requests
+from pathlib import Path
 
-def add_ip_to_whitelist(ip_address):
-    """Adds a given IP address to the whitelist in the database."""
+def get_env_value(key, default=None):
+    """Get value from .env file"""
+    env_file = Path('.env')
+    if env_file.exists():
+        with open(env_file, 'r') as f:
+            for line in f:
+                if line.strip() and not line.startswith('#') and '=' in line:
+                    k, v = line.strip().split('=', 1)
+                    if k == key:
+                        return v
+    return os.environ.get(key, default)
+
+def detect_current_ip():
+    """Detect current external IP address"""
     try:
-        conn = psycopg2.connect(
-            host=os.environ.get("DB_HOST", "localhost"),
-            database=os.environ.get("DB_NAME", "gbot_web_app"),
-            user=os.environ.get("DB_USER", "user"),
-            password=os.environ.get("DB_PASSWORD", "password")
-        )
-        cur = conn.cursor()
-
-        # Use the correct table name 'whitelisted_ips'
-        cur.execute("SELECT ip_address FROM whitelisted_ips WHERE ip_address = %s", (ip_address,))
+        # Try multiple IP detection services
+        services = [
+            'https://api.ipify.org?format=json',
+            'https://ipinfo.io/ip',
+            'https://icanhazip.com'
+        ]
         
-        if cur.fetchone():
-            print(f"IP {ip_address} is already in the whitelist.")
-        else:
-            cur.execute("INSERT INTO whitelisted_ips (ip_address) VALUES (%s)", (ip_address,))
-            conn.commit()
-            print(f"IP {ip_address} added to whitelist successfully.")
-
-        cur.close()
-        conn.close()
-
-    except psycopg2.OperationalError as e:
-        print(f"Database connection error: {e}", file=sys.stderr)
-        print("Please ensure your database is running and the environment variables are set.", file=sys.stderr)
-        sys.exit(1)
-    except psycopg2.errors.UndefinedTable:
-        print("Error: The table 'whitelisted_ips' was not found.", file=sys.stderr)
-        print("Please check the database schema. The setup may not have completed.", file=sys.stderr)
-        sys.exit(1)
+        for service in services:
+            try:
+                response = requests.get(service, timeout=5)
+                if response.status_code == 200:
+                    if service.endswith('json'):
+                        return response.json()['ip']
+                    else:
+                        return response.text.strip()
+            except:
+                continue
+                
+        return None
     except Exception as e:
-        print(f"An unexpected error occurred: {e}", file=sys.stderr)
-        sys.exit(1)
+        print(f"Error detecting IP: {e}")
+        return None
+
+def add_ip_to_whitelist(ip_address, emergency_key, base_url="http://localhost"):
+    """Add IP to whitelist using emergency API"""
+    try:
+        url = f"{base_url}/api/emergency-add-ip"
+        data = {
+            'ip_address': ip_address,
+            'emergency_key': emergency_key
+        }
+        
+        response = requests.post(url, json=data, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                print(f"✅ Success: {result['message']}")
+                return True
+            else:
+                print(f"❌ Error: {result['error']}")
+                return False
+        else:
+            print(f"❌ HTTP Error: {response.status_code}")
+            if response.status_code == 403:
+                print("Access denied. Check your emergency key.")
+            return False
+            
+    except requests.exceptions.ConnectionError:
+        print(f"❌ Connection error: Could not connect to {base_url}")
+        print("Make sure the application is running and accessible.")
+        return False
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return False
+
+def list_whitelisted_ips(base_url="http://localhost"):
+    """List all whitelisted IPs"""
+    try:
+        url = f"{base_url}/api/list-whitelist-ips"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('success'):
+                ips = result.get('ips', [])
+                if ips:
+                    print("📋 Whitelisted IPs:")
+                    for ip in ips:
+                        print(f"  • {ip}")
+                    print(f"\nTotal: {len(ips)} IP(s)")
+                else:
+                    print("📋 No IPs are currently whitelisted")
+            else:
+                print(f"❌ Error: {result['error']}")
+        else:
+            print(f"❌ HTTP Error: {response.status_code}")
+            
+    except requests.exceptions.ConnectionError:
+        print(f"❌ Connection error: Could not connect to {base_url}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+def main():
+    parser = argparse.ArgumentParser(description='GBot Web App IP Whitelist Manager')
+    parser.add_argument('--add', metavar='IP', help='Add IP address to whitelist')
+    parser.add_argument('--detect', action='store_true', help='Detect current external IP')
+    parser.add_argument('--list', action='store_true', help='List all whitelisted IPs')
+    parser.add_argument('--key', metavar='KEY', help='Emergency access key (or set WHITELIST_TOKEN env var)')
+    parser.add_argument('--url', metavar='URL', default='http://localhost', help='Base URL of the application (default: http://localhost)')
+    
+    args = parser.parse_args()
+    
+    if not any([args.add, args.detect, args.list]):
+        parser.print_help()
+        return
+    
+    # Get emergency key
+    emergency_key = args.key or get_env_value('WHITELIST_TOKEN')
+    if not emergency_key:
+        print("❌ Error: Emergency access key not provided")
+        print("Use --key option or set WHITELIST_TOKEN environment variable")
+        return
+    
+    if args.detect:
+        print("🔍 Detecting current external IP...")
+        current_ip = detect_current_ip()
+        if current_ip:
+            print(f"✅ Your current external IP: {current_ip}")
+        else:
+            print("❌ Could not detect current IP")
+    
+    if args.add:
+        ip_address = args.add
+        print(f"🚨 Adding IP {ip_address} to whitelist...")
+        if add_ip_to_whitelist(ip_address, emergency_key, args.url):
+            print("✅ IP added successfully!")
+        else:
+            print("❌ Failed to add IP")
+    
+    if args.list:
+        print("📋 Fetching whitelisted IPs...")
+        list_whitelisted_ips(args.url)
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print("Usage: python manage_whitelist.py <IP_ADDRESS>", file=sys.stderr)
-        sys.exit(1)
-    
-    current_ip = sys.argv[1]
-    print(f"Attempting to whitelist current IP: {current_ip}")
-    add_ip_to_whitelist(current_ip)
+    main()
