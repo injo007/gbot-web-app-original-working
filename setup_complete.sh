@@ -17,6 +17,7 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_NAME="GBot Web Application"
 LOG_FILE="$SCRIPT_DIR/setup.log"
+CREDENTIALS_FILE="$SCRIPT_DIR/.credentials"
 
 # Logging functions
 log() {
@@ -37,6 +38,22 @@ log_warning() {
 log_error() {
     echo -e "${RED}[✗]${NC} $1"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1" >> "$LOG_FILE"
+}
+
+save_credentials() {
+    local title="$1"
+    local content="$2"
+    echo -e "\n=== $title ===" >> "$CREDENTIALS_FILE"
+    echo "$content" >> "$CREDENTIALS_FILE"
+}
+
+show_credentials() {
+    echo -e "\n${GREEN}=== Installation Credentials ===${NC}"
+    if [ -f "$CREDENTIALS_FILE" ]; then
+        cat "$CREDENTIALS_FILE"
+    else
+        echo -e "${RED}No credentials file found${NC}"
+    fi
 }
 
 cleanup_duplicate_files() {
@@ -61,6 +78,7 @@ create_required_directories() {
     # Create logs directory
     mkdir -p "$SCRIPT_DIR/logs"
     chmod 755 "$SCRIPT_DIR/logs"
+    chown -R root:root "$SCRIPT_DIR/logs"
     
     # Create instance directory if it doesn't exist
     mkdir -p "$SCRIPT_DIR/instance"
@@ -199,6 +217,9 @@ setup_postgresql() {
     echo "DATABASE_URL=postgresql://$DB_USER:$DB_PASS@localhost/$DB_NAME" > "$SCRIPT_DIR/.env"
     chmod 600 "$SCRIPT_DIR/.env"
     
+    # Save credentials for display
+    save_credentials "PostgreSQL Credentials" "Database: $DB_NAME\nUser: $DB_USER\nPassword: $DB_PASS"
+    
     log_success "PostgreSQL setup completed"
 }
 
@@ -278,6 +299,9 @@ User=root
 Group=root
 WorkingDirectory=$SCRIPT_DIR
 Environment="PATH=$SCRIPT_DIR/venv/bin"
+Environment="PYTHONPATH=$SCRIPT_DIR"
+Environment="FLASK_APP=app.py"
+Environment="FLASK_ENV=production"
 ExecStart=$SCRIPT_DIR/venv/bin/gunicorn \\
     --workers 2 \\
     --bind unix:$SCRIPT_DIR/gbot.sock \\
@@ -304,14 +328,51 @@ EOF
 
 start_services() {
     log "Starting all services..."
+    
+    # Start PostgreSQL
     $SUDO_CMD systemctl restart postgresql
+    sleep 2
+    if ! systemctl is-active --quiet postgresql; then
+        log_error "PostgreSQL failed to start"
+        systemctl status postgresql
+        exit 1
+    fi
+    log_success "PostgreSQL is running"
+    
+    # Start GBot service
     $SUDO_CMD systemctl restart gbot
+    sleep 2
+    if ! systemctl is-active --quiet gbot; then
+        log_error "GBot service failed to start"
+        systemctl status gbot
+        journalctl -u gbot -n 50
+        exit 1
+    fi
+    log_success "GBot service is running"
+    
+    # Start Nginx
     $SUDO_CMD systemctl restart nginx
-    log_success "Services have been started"
+    sleep 2
+    if ! systemctl is-active --quiet nginx; then
+        log_error "Nginx failed to start"
+        systemctl status nginx
+        exit 1
+    fi
+    log_success "Nginx is running"
+    
+    # Show service statuses
+    echo -e "\n${GREEN}=== Service Status ===${NC}"
+    systemctl status postgresql --no-pager
+    systemctl status gbot --no-pager
+    systemctl status nginx --no-pager
 }
 
 run_complete_installation() {
     log "Starting complete installation..."
+    
+    # Clear credentials file
+    > "$CREDENTIALS_FILE"
+    chmod 600 "$CREDENTIALS_FILE"
     
     cleanup_duplicate_files
     create_required_directories
@@ -324,7 +385,11 @@ run_complete_installation() {
     start_services
     
     log_success "Complete installation finished successfully!"
-    echo -e "${GREEN}Installation is complete. Your application should be accessible at your server's IP address.${NC}"
+    
+    # Show all credentials and service status
+    show_credentials
+    
+    echo -e "\n${GREEN}Installation is complete. Your application should be accessible at your server's IP address.${NC}"
 }
 
 main() {
