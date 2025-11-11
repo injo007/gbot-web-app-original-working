@@ -110,11 +110,43 @@ setup_frontend() {
                 return 0
             fi
             
-            log "Removing old Node.js version $current_version..."
-            sudo apt-get remove -y nodejs npm || true
+            log "Force removing old Node.js version $current_version..."
+            # Remove via package manager
+            sudo dpkg --remove --force-all nodejs nodejs-doc npm libnode-dev || true
+            sudo dpkg --remove --force-depends nodejs nodejs-doc npm libnode-dev || true
+            sudo apt-get remove -y --purge nodejs nodejs-doc npm libnode-dev || true
             sudo apt-get -y autoremove || true
-            sudo rm -rf /usr/local/bin/npm /usr/local/share/man/man1/node* /usr/local/lib/dtrace/node.d ~/.npm ~/.node-gyp /opt/local/bin/node /opt/local/include/node /opt/local/lib/node_modules 2>/dev/null || true
-            sudo rm -f /etc/apt/sources.list.d/nodesource.list 2>/dev/null || true
+            sudo apt-get clean
+            
+            # Remove all Node.js related files
+            sudo rm -rf /usr/local/bin/npm \
+                       /usr/local/share/man/man1/node* \
+                       /usr/local/lib/dtrace/node.d \
+                       ~/.npm \
+                       ~/.node-gyp \
+                       ~/.nvm \
+                       /opt/local/bin/node \
+                       /opt/local/include/node \
+                       /opt/local/lib/node_modules \
+                       /usr/local/include/node \
+                       /usr/include/node* \
+                       /usr/include/nodejs* \
+                       /usr/lib/node* \
+                       /usr/lib/nodejs* \
+                       /usr/local/lib/node* \
+                       /usr/local/lib/nodejs* \
+                       /usr/share/doc/nodejs* \
+                       /var/lib/dpkg/info/nodejs* \
+                       2>/dev/null || true
+                       
+            # Remove Node.js source lists
+            sudo rm -f /etc/apt/sources.list.d/nodesource.list* 2>/dev/null || true
+            
+            # Fix package system
+            sudo dpkg --configure -a
+            sudo apt-get -f install
+            sudo apt-get update --fix-missing
+            sudo apt-get install -f
         fi
 
         # Install Node.js 20.x (LTS)
@@ -124,10 +156,44 @@ setup_frontend() {
             return 1
         fi
         
-        # Skip apt-get update as it's handled manually
-        if ! sudo apt-get install -y nodejs; then
-            log_error "Failed to install Node.js"
-            return 1
+        # Force install to handle any conflicts
+        if ! sudo apt-get install -y --force-yes --allow-unauthenticated nodejs || \
+           ! sudo dpkg --force-all -i /var/cache/apt/archives/nodejs*.deb || \
+           ! sudo apt-get install -y --fix-broken --force-yes nodejs; then
+            # Fallback 1: Direct download and install
+            log "Attempting direct package download..."
+            if wget -O /tmp/nodejs.deb https://deb.nodesource.com/node_20.x/pool/main/n/nodejs/nodejs_20.9.0-1nodesource1_amd64.deb; then
+                if [ -f "/tmp/nodejs.deb" ]; then
+                    sudo dpkg --force-all -i /tmp/nodejs.deb && \
+                    sudo apt-get install -f || {
+                        log_warning "Failed to install Node.js package via dpkg, trying nvm..."
+                        rm -f /tmp/nodejs.deb
+                        
+                        # Fallback 2: Try nvm
+                        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+                        export NVM_DIR="$HOME/.nvm"
+                        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+                        [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+                        
+                        if command -v nvm >/dev/null 2>&1; then
+                            nvm install 20 && nvm use 20 && nvm alias default 20 || {
+                                log_error "Failed to install Node.js via nvm"
+                                return 1
+                            }
+                        else
+                            log_error "Failed to install nvm"
+                            return 1
+                        fi
+                    }
+                    rm -f /tmp/nodejs.deb
+                else
+                    log_error "Failed to download Node.js package"
+                    return 1
+                fi
+            else
+                log_error "Failed to download Node.js"
+                return 1
+            fi
         fi
 
         # Verify installation
@@ -365,21 +431,23 @@ dist
     fi
 
     # Clean up old files
-    log "Cleaning up old files..."
-    find "$APP_ROOT" -maxdepth 1 -type f \( \
-        -name "*_FIX.md" -o \
-        -name "fix_*.sh" -o \
-        -name "fix_*.py" -o \
-        -name "fix_*.sql" -o \
-        -name "QUICK_FIX_*.md" -o \
-        -name "*_DEBUG.md" -o \
-        -name "test_*.py" -o \
-        -name "test_*.sh" -o \
-        -name "check_*.py" -o \
-        -name "check_*.sh" -o \
-        -name "diagnose_*.py" -o \
-        -name "diagnose_*.sh" \
-    \) -delete
+    log "Force removing old files..."
+    sudo rm -rf "$APP_ROOT"/templates
+    sudo rm -rf "$APP_ROOT"/*_FIX.md
+    sudo rm -rf "$APP_ROOT"/fix_*
+    sudo rm -rf "$APP_ROOT"/QUICK_FIX_*
+    sudo rm -rf "$APP_ROOT"/*_DEBUG.md
+    sudo rm -rf "$APP_ROOT"/test_*
+    sudo rm -rf "$APP_ROOT"/check_*
+    sudo rm -rf "$APP_ROOT"/diagnose_*
+    sudo rm -rf "$APP_ROOT"/DEPLOYMENT_UPDATES.md
+    sudo rm -rf "$APP_ROOT"/UBUNTU_DEPLOYMENT_SUMMARY.md
+    sudo rm -rf "$APP_ROOT"/FRONTEND_DEBUG_FIX.md
+    sudo rm -rf "$APP_ROOT"/NGINX_TIMEOUT_FIX.md
+    sudo rm -rf "$APP_ROOT"/NGINX_UPLOAD_SIZE_FIX.md
+    sudo rm -rf "$APP_ROOT"/PROGRESS_TRACKING_FIX.md
+    sudo rm -rf "$APP_ROOT"/REQUEST_CONTEXT_FIX.md
+    sudo rm -rf "$APP_ROOT"/TASK_NOT_FOUND_DEBUG.md
 
     # Clean up old directories
     if [ -d "$APP_ROOT/templates" ]; then
