@@ -1,0 +1,494 @@
+
+/* ---
+   Design System: GBot Web App - ClickUp-Inspired Redesign
+   --- */
+
+/* 1. Root Variables & Global Styles
+   ========================================================================== */
+:root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+
+    /* Color Palette */
+    --color-primary-light: #A855F7; /* Purple */
+    --color-primary-dark: #7B68EE;  /* Violet */
+    --color-text-primary: #171321;
+    --color-text-secondary: #5e5d66;
+    --color-text-subtle: #8a8894;
+    --color-bg-main: #F7F7FA;
+    --color-bg-sidebar: #FFFFFF;
+    --color-bg-card: #FFFFFF;
+    --color-border-subtle: #EBEAEF;
+    --color-border-strong: #DCDAE4;
+    --color-success: #28a745;
+    --color-warning: #fd9d3e;
+    --color-danger: #dc3545;
+    --color-info: #007bff;
+
+    /* Spacing & Sizing */
+    --sidebar-width: 260px;
+    --header-height: 65px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+
+    /* Borders & Shadows */
+    --border-radius-sm: 4px;
+    --border-radius-md: 8px;
+    --border-radius-lg: 12px;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 3px 6px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.07);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-sans);
+    background-color: var(--color-bg-main);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    display: flex;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin-top: 0;
+    margin-bottom: 0.75em;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+p {
+    margin-top: 0;
+    margin-bottom: 1em;
+    line-height: 1.6;
+    color: var(--color-text-secondary);
+}
+
+a {
+    color: var(--color-primary-dark);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+a:hover {
+    color: var(--color-primary-light);
+}
+
+/* 2. Main Layout (Sidebar, Header, Content)
+   ========================================================================== */
+.sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    background-color: var(--color-bg-sidebar);
+    border-right: 1px solid var(--color-border-subtle);
+    padding: var(--spacing-lg) var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease;
+}
+
+.main-content {
+    margin-left: var(--sidebar-width);
+    width: calc(100% - var(--sidebar-width));
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.header {
+    height: var(--header-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border-subtle);
+    background-color: var(--color-bg-card);
+}
+
+.header-title {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.page-content {
+    flex-grow: 1;
+    padding: var(--spacing-lg);
+}
+
+/* 3. Sidebar Components
+   ========================================================================== */
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: 0 var(--spacing-sm) var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border-subtle);
+    margin-bottom: var(--spacing-md);
+}
+
+.sidebar-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-md);
+    background: linear-gradient(45deg, var(--color-primary-dark), var(--color-primary-light));
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.sidebar-title {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.sidebar-nav {
+    flex-grow: 1;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.nav-item a {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: 12px var(--spacing-md);
+    border-radius: var(--border-radius-md);
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.nav-item a:hover {
+    background-color: var(--color-bg-main);
+    color: var(--color-text-primary);
+}
+
+.nav-item a.active {
+    background: linear-gradient(90deg, var(--color-primary-dark), var(--color-primary-light));
+    color: white;
+    box-shadow: var(--shadow-md);
+}
+
+.nav-item a i {
+    width: 20px;
+    text-align: center;
+    font-size: 16px;
+}
+
+.sidebar-footer {
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--color-border-subtle);
+}
+
+/* 4. Header Components
+   ========================================================================== */
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.user-info {
+    text-align: right;
+}
+
+.user-name {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.user-role {
+    font-size: 12px;
+    color: var(--color-text-subtle);
+    text-transform: capitalize;
+}
+
+.logout-button {
+    font-size: 12px;
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+/* 5. Card & Content Components
+   ========================================================================== */
+.card {
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--spacing-xl);
+    overflow: hidden;
+}
+
+.card-header {
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border-subtle);
+    background-color: #FCFCFD;
+}
+
+.card-title {
+    font-size: 18px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.card-title i {
+    color: var(--color-primary-dark);
+}
+
+.card-subtitle {
+    margin: var(--spacing-xs) 0 0 0;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--color-text-secondary);
+}
+
+.card-body {
+    padding: var(--spacing-lg);
+}
+
+.card-footer {
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-top: 1px solid var(--color-border-subtle);
+    background-color: #FCFCFD;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-md);
+}
+
+/* 6. Form Components (Buttons, Inputs)
+   ========================================================================== */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--spacing-lg);
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.form-label {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--color-text-primary);
+}
+.form-label i {
+    margin-right: var(--spacing-sm);
+    color: var(--color-text-subtle);
+}
+
+.form-control {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: var(--border-radius-md);
+    border: 1px solid var(--color-border-strong);
+    background-color: var(--color-bg-main);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--color-primary-dark);
+    box-shadow: 0 0 0 3px rgba(123, 104, 238, 0.2);
+}
+
+textarea.form-control {
+    resize: vertical;
+    min-height: 100px;
+    font-family: var(--font-mono);
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: 10px var(--spacing-md);
+    border: none;
+    border-radius: var(--border-radius-md);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-primary {
+    color: white;
+    background: linear-gradient(45deg, var(--color-primary-dark), var(--color-primary-light));
+    box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+.btn-secondary {
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--color-border-strong);
+}
+.btn-secondary:hover {
+    background-color: #f0eefc;
+    border-color: var(--color-primary-dark);
+}
+
+.btn-danger {
+    background-color: var(--color-danger);
+    color: white;
+}
+.btn-danger:hover {
+     background-color: #c82333;
+}
+
+/* 7. Specific Components
+   ========================================================================== */
+
+/* Status Messages / Alerts */
+.status-message {
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+    border-radius: var(--border-radius-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    font-weight: 500;
+}
+.status-success {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+.status-error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+.status-info {
+    background-color: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+}
+
+/* Auth Method Switch */
+#password-field, #key-field, #otp_password_field, #otp_key_field {
+    transition: opacity 0.3s, visibility 0.3s;
+}
+
+/* For existing legacy IDs, let's adapt them gracefully */
+.github-card {
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--spacing-xl);
+}
+.github-card-header {
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border-subtle);
+}
+.github-card-title {
+     font-size: 18px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+.btn-github {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    padding: 10px var(--spacing-md);
+    border: none;
+    border-radius: var(--border-radius-md);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-card);
+    border: 1px solid var(--color-border-strong);
+}
+.btn-github:hover {
+    background-color: #f0eefc;
+    border-color: var(--color-primary-dark);
+}
+.btn-github-primary {
+    color: white;
+    background: linear-gradient(45deg, var(--color-primary-dark), var(--color-primary-light));
+    box-shadow: var(--shadow-sm);
+    border: none;
+}
+.btn-github-primary:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.form-group-github {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+.form-label-github {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--color-text-primary);
+}
+.form-control-github {
+     width: 100%;
+    padding: 10px 12px;
+    border-radius: var(--border-radius-md);
+    border: 1px solid var(--color-border-strong);
+    background-color: var(--color-bg-main);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.form-control-github:focus {
+    outline: none;
+    border-color: var(--color-primary-dark);
+    box-shadow: 0 0 0 3px rgba(123, 104, 238, 0.2);
+}
+
+/* Modal styles (Bootstrap overrides) */
+.modal-content {
+    border-radius: var(--border-radius-lg);
+    border: none;
+    box-shadow: var(--shadow-lg);
+}
+.modal-header {
+    border-bottom: 1px solid var(--color-border-subtle);
+    padding: var(--spacing-lg);
+}
+.modal-body {
+    padding: var(--spacing-lg);
+}
+.modal-footer {
+    border-top: 1px solid var(--color-border-subtle);
+    padding: var(--spacing-md) var(--spacing-lg);
+}

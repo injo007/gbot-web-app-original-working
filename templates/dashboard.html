@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - GBot Web App{% endblock %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- Account & Authentication Card -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-user-friends"></i> Account & Authentication</h3>
+        <p class="card-subtitle">Select, authenticate, and manage your Google Workspace accounts.</p>
+    </div>
+    <div class="card-body">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="account-select" class="form-label"><i class="fas fa-user-circle"></i> Select Account</label>
+                <select id="account-select" class="form-control">
+                    <option value="">Choose an account...</option>
+                    {% for account in accounts %}
+                    <option value="{{ account.account_name }}" data-account-id="{{ account.id }}">{{ account.account_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">&nbsp;</label> <!-- Spacer -->
+                <button onclick="authenticateAccount()" class="btn btn-primary"><i class="fas fa-key"></i> Authenticate Selected</button>
+            </div>
+        </div>
+        <div id="auth-status" class="status-message status-info" style="margin-top: 16px;">No account authenticated.</div>
+    </div>
+    <div class="card-footer">
+        <button onclick="openAddAccountModal()" class="btn btn-secondary"><i class="fas fa-plus"></i> Add Manually</button>
+        <button onclick="addFromServerJSON()" class="btn btn-secondary"><i class="fas fa-folder-open"></i> Add from Server JSON</button>
+        <button onclick="enterAuthorizationCode()" class="btn btn-secondary"><i class="fas fa-code"></i> Enter Auth Code</button>
+    </div>
+</div>
+
+<!-- Namecheap DNS Card -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-globe-americas"></i> Namecheap DNS</h3>
+        <p class="card-subtitle">Fetch and view your registered domains from Namecheap.</p>
+    </div>
+    <div class="card-body">
+        <div id="namecheap-domain-display">
+            <p>Click the button to fetch your domain list from Namecheap.</p>
+        </div>
+    </div>
+    <div class="card-footer">
+        <button onclick="fetchNamecheapDomains()" class="btn btn-primary"><i class="fas fa-sync-alt"></i> Fetch Domains</button>
+    </div>
+</div>
+
+
+<!-- User Management Card -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-users"></i> User Management</h3>
+        <p class="card-subtitle">Retrieve, create, and manage users in the authenticated account.</p>
+    </div>
+    <div class="card-body">
+        <h4 style="font-size: 16px; margin-bottom: 16px;">Retrieve Users</h4>
+        <div id="user-display" class="data-display" style="margin-bottom: 24px;">
+            <p>Click "Retrieve All Users" to load and display all users from your Google Workspace.</p>
+        </div>
+        <div id="user-count" style="margin-bottom: 24px; font-weight: 500;">Total Users: 0</div>
+    </div>
+    <div class="card-footer">
+        <button onclick="retrieveUsers()" class="btn btn-primary"><i class="fas fa-chart-bar"></i> Retrieve All Users</button>
+        <button onclick="clearUserList()" class="btn btn-secondary"><i class="fas fa-broom"></i> Clear List</button>
+        <button onclick="copyAllUsers()" class="btn btn-secondary"><i class="fas fa-copy"></i> Copy All Users</button>
+    </div>
+</div>
+
+<!-- All Modals from original file -->
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Account Manually</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addAccountForm">
+                    <div class="form-group mb-3">
+                        <label for="new-account-email" class="form-label">Account Email</label>
+                        <input type="email" id="new-account-email" class="form-control" required placeholder="admin@yourdomain.com">
+                    </div>
+                    <div class="form-group mb-3">
+                        <label for="new-client-id" class="form-label">Client ID</label>
+                        <input type="text" id="new-client-id" class="form-control" required placeholder="123456789-abcdef.apps.googleusercontent.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="new-client-secret" class="form-label">Client Secret</label>
+                        <input type="password" id="new-client-secret" class="form-control" required placeholder="GOCSPX-your_client_secret">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" onclick="saveNewAccount()" class="btn btn-primary">Save Account</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- OAuth Modal -->
+<div class="modal fade" id="oauthModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">OAuth Authorization Required</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Please copy this link and open it in your browser to authorize:</p>
+                <div id="oauthUrl" style="font-family: var(--font-mono); word-break: break-all; margin: 16px 0; background: #eee; padding: 8px; border-radius: 4px;"></div>
+                <button onclick="copyOAuthUrl()" class="btn btn-secondary"><i class="fas fa-copy"></i> Copy Link</button>
+                <button onclick="openOAuthUrl()" class="btn btn-primary"><i class="fas fa-external-link-alt"></i> Open Link</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentAccount = null;
+let isAuthenticated = false;
+let oauthModal = null;
+let addAccountModal = null;
+
+$(document).ready(function() {
+    oauthModal = new bootstrap.Modal(document.getElementById('oauthModal'));
+    addAccountModal = new bootstrap.Modal(document.getElementById('addAccountModal'));
+});
+
+// --- Namecheap DNS Functions ---
+function fetchNamecheapDomains() {
+    const display = $('#namecheap-domain-display');
+    display.html('<p><i class="fas fa-spinner fa-spin"></i> Fetching domains...</p>');
+
+    fetch('/api/dns/namecheap/domains')
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || 'Server returned an error'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success && data.domains) {
+                if (data.domains.length > 0) {
+                    let table = '<table class="table table-striped"><thead><tr><th>Domain</th><th>Expires</th><th>Our DNS</th></tr></thead><tbody>';
+                    data.domains.forEach(domain => {
+                        table += `<tr><td>${domain.domain}</td><td>${domain.expires}</td><td>${domain.isOurDNS ? '✅ Yes' : '❌ No'}</td></tr>`;
+                    });
+                    table += '</tbody></table>';
+                    display.html(table);
+                } else {
+                    display.html('<p>No domains found in your Namecheap account.</p>');
+                }
+            } else {
+                throw new Error(data.error || 'Failed to parse domain data.');
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching Namecheap domains:', error);
+            display.html(`<div class="status-message status-error">❌ Error: ${error.message}</div>`);
+        });
+}
+
+// --- Account Management Functions ---
+function authenticateAccount() {
+    const accountName = $('#account-select').val();
+    const accountId = $('#account-select').find(':selected').data('account-id');
+
+    if (!accountId) {
+        showStatus('Please select an account first.', 'error');
+        return;
+    }
+
+    updateAuthStatus(accountName, false, 'Authenticating...');
+
+    fetch('/api/authenticate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, account_name: accountName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateAuthStatus(accountName, true, data.message);
+            sessionStorage.setItem('current_account_name', accountName);
+        } else if (data.oauth_required && data.oauth_url) {
+            $('#oauthUrl').text(data.oauth_url);
+            window.currentOAuthUrl = data.oauth_url;
+            oauthModal.show();
+        } else {
+            updateAuthStatus(accountName, false, data.error || 'Authentication failed');
+        }
+    })
+    .catch(error => {
+        updateAuthStatus(accountName, false, 'Network error: ' + error.message);
+    });
+}
+
+function updateAuthStatus(account, authenticated, message) {
+    const statusBox = $('#auth-status');
+    currentAccount = account;
+    isAuthenticated = authenticated;
+
+    if (authenticated) {
+        statusBox.html(`✅ Authenticated as: <strong>${account}</strong>`).removeClass('status-error').addClass('status-success');
+    } else {
+        statusBox.html(`❌ ${message || 'Not authenticated'}`).removeClass('status-success').addClass('status-error');
+    }
+}
+
+function openAddAccountModal() {
+    addAccountModal.show();
+}
+
+function saveNewAccount() {
+    const accountData = {
+        account_name: $('#new-account-email').val(),
+        client_id: $('#new-client-id').val(),
+        client_secret: $('#new-client-secret').val(),
+    };
+
+    fetch('/api/add-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(accountData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            addAccountModal.hide();
+            showStatus('Account added successfully! Reloading page...', 'success');
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => alert('Network error: ' + error.message));
+}
+
+// --- User Management Functions ---
+function retrieveUsers() {
+    if (!isAuthenticated) {
+        showStatus('Please authenticate an account first.', 'error');
+        return;
+    }
+    const display = $('#user-display');
+    display.html('<p><i class="fas fa-spinner fa-spin"></i> Retrieving users... This may take a moment.</p>');
+
+    fetch('/api/retrieve-users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'batched' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.users) {
+            $('#user-count').text(`Total Users: ${data.users.length}`);
+            let table = '<table class="table table-striped"><thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Admin</th></tr></thead><tbody>';
+            data.users.forEach(user => {
+                table += `<tr>
+                    <td>${user.email}</td>
+                    <td>${user.first_name} ${user.last_name}</td>
+                    <td>${user.suspended ? 'Suspended' : 'Active'}</td>
+                    <td>${user.admin ? 'Yes' : 'No'}</td>
+                </tr>`;
+            });
+            table += '</tbody></table>';
+            display.html(table);
+        } else {
+            display.html(`<div class="status-message status-error">Error: ${data.error || 'Could not retrieve users.'}</div>`);
+        }
+    })
+    .catch(err => {
+        display.html(`<div class="status-message status-error">Network Error: ${err.message}</div>`);
+    });
+}
+
+function clearUserList() {
+    $('#user-display').html('<p>User list cleared.</p>');
+    $('#user-count').text('Total Users: 0');
+}
+
+function copyAllUsers() {
+    const emails = [];
+    $('#user-display').find('tbody tr').each(function() {
+        emails.push($(this).find('td:first').text());
+    });
+    if (emails.length > 0) {
+        navigator.clipboard.writeText(emails.join('\n')).then(() => {
+            showStatus(`Copied ${emails.length} user emails to clipboard.`, 'success');
+        });
+    } else {
+        showStatus('No users to copy.', 'info');
+    }
+}
+
+
+// --- Utility & Modal Functions ---
+function enterAuthorizationCode() {
+    // Implement if needed
+}
+
+function addFromServerJSON() {
+    // Implement if needed
+}
+
+function openOAuthUrl() {
+    if(window.currentOAuthUrl) window.open(window.currentOAuthUrl, '_blank');
+}
+
+function copyOAuthUrl() {
+    if(window.currentOAuthUrl) navigator.clipboard.writeText(window.currentOAuthUrl).then(() => alert('Copied!'));
+}
+
+function showStatus(message, type) {
+    const container = document.createElement('div');
+    container.className = `status-message status-${type}`;
+    container.textContent = message;
+    $('.page-content').prepend(container);
+    setTimeout(() => $(container).fadeOut(500, () => $(container).remove()), 5000);
+}
+
+</script>
+{% endblock %}

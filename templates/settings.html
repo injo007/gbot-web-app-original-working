@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - GBot Web App{% endblock %}
+
+{% block page_title %}Settings{% endblock %}
+
+{% block content %}
+
+<!-- Namecheap API Settings Card -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-globe-americas"></i>Namecheap DNS API Configuration</h3>
+        <p class="card-subtitle">Configure your Namecheap API credentials to fetch and manage domains.</p>
+    </div>
+    <form id="namecheap-api-form">
+        <div class="card-body">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="namecheap_api_user" class="form-label"><i class="fas fa-user"></i>API User</label>
+                    <input type="text" class="form-control" id="namecheap_api_user" name="api_user" placeholder="Your Namecheap Username" required>
+                </div>
+                <div class="form-group">
+                    <label for="namecheap_api_key" class="form-label"><i class="fas fa-key"></i>API Key</label>
+                    <input type="password" class="form-control" id="namecheap_api_key" name="api_key" placeholder="Your Namecheap API Key" required>
+                </div>
+                <div class="form-group">
+                    <label for="namecheap_client_ip" class="form-label"><i class="fas fa-desktop"></i>Client IP</label>
+                    <input type="text" class="form-control" id="namecheap_client_ip" name="client_ip" placeholder="Your Server's Public IP" required>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i>Save Namecheap Settings</button>
+        </div>
+    </form>
+</div>
+
+<!-- Server Configuration Card -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-server"></i>Server Configuration</h3>
+        <p class="card-subtitle">Configure the server for importing accounts from JSON files.</p>
+    </div>
+    <form id="server-config-form">
+        <div class="card-body">
+             <div class="form-grid">
+                <div class="form-group">
+                    <label for="server_host" class="form-label">Server Host/IP</label>
+                    <input type="text" class="form-control" id="server_host" placeholder="192.168.1.100 or server.domain.com" required>
+                </div>
+                <div class="form-group">
+                    <label for="server_port" class="form-label">Port</label>
+                    <input type="number" class="form-control" id="server_port" value="22" min="1" max="65535" required>
+                </div>
+                 <div class="form-group">
+                    <label for="server_username" class="form-label">Username</label>
+                    <input type="text" class="form-control" id="server_username" placeholder="ubuntu or root" required>
+                </div>
+                <div class="form-group">
+                    <label for="server_auth_method" class="form-label">Authentication Method</label>
+                    <select class="form-control" id="server_auth_method" required>
+                        <option value="password">Password</option>
+                        <option value="key">SSH Key</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-grid" style="margin-top: 16px;">
+                 <div class="form-group" id="password-field">
+                    <label for="server_password" class="form-label">Password</label>
+                    <input type="password" class="form-control" id="server_password" placeholder="Server password">
+                </div>
+                <div class="form-group" id="key-field" style="display: none;">
+                    <label for="server_private_key" class="form-label">Private Key</label>
+                    <textarea class="form-control" id="server_private_key" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----"></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+             <button type="button" class="btn btn-secondary" onclick="testServerConnection()">Test Connection</button>
+             <button type="submit" class="btn btn-primary">Save Server Settings</button>
+        </div>
+    </form>
+</div>
+
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // --- Event Handlers ---
+    $('#server_auth_method').change(function() {
+        const method = $(this).val();
+        $('#password-field').toggle(method === 'password');
+        $('#key-field').toggle(method === 'key');
+        $('#server_password').prop('required', method === 'password');
+        $('#server_private_key').prop('required', method === 'key');
+    });
+
+    $('#server-config-form').submit(function(e) {
+        e.preventDefault();
+        saveServerConfiguration();
+    });
+
+    $('#namecheap-api-form').submit(function(e) {
+        e.preventDefault();
+        saveNamecheapConfiguration();
+    });
+    
+    // --- Initial Loaders ---
+    loadNamecheapConfiguration();
+    loadServerConfiguration();
+});
+
+// --- Namecheap API Functions ---
+function loadNamecheapConfiguration() {
+    fetch('/api/dns/namecheap/settings')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.settings) {
+                $('#namecheap_api_user').val(data.settings.api_user || '');
+                $('#namecheap_api_key').val(data.settings.api_key || '');
+                $('#namecheap_client_ip').val(data.settings.client_ip || '');
+            }
+        }).catch(err => console.error('Error loading Namecheap settings:', err));
+}
+
+function saveNamecheapConfiguration() {
+    const settings = {
+        api_user: $('#namecheap_api_user').val(),
+        api_key: $('#namecheap_api_key').val(),
+        client_ip: $('#namecheap_client_ip').val(),
+    };
+
+    showStatus('Saving Namecheap API settings...', 'info');
+
+    fetch('/api/dns/namecheap/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showStatus('Namecheap API settings saved successfully!', 'success');
+        } else {
+            showStatus('Error saving Namecheap settings: ' + data.error, 'error');
+        }
+    }).catch(err => {
+        showStatus('Network error while saving Namecheap settings.', 'error');
+    });
+}
+
+// --- Server Config Functions ---
+function loadServerConfiguration() {
+     fetch('/api/get-server-config')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.config) {
+                $('#server_host').val(data.config.host || '');
+                $('#server_port').val(data.config.port || 22);
+                $('#server_username').val(data.config.username || '');
+                $('#server_auth_method').val(data.config.auth_method || 'password').trigger('change');
+                $('#server_password').val(data.config.password || '');
+                $('#server_private_key').val(data.config.private_key || '');
+            }
+        }).catch(err => console.error('Error loading server config:', err));
+}
+
+function saveServerConfiguration() {
+    const config = {
+        host: $('#server_host').val(),
+        port: parseInt($('#server_port').val()),
+        username: $('#server_username').val(),
+        auth_method: $('#server_auth_method').val(),
+        password: $('#server_password').val(),
+        private_key: $('#server_private_key').val(),
+    };
+
+    showStatus('Saving server configuration...', 'info');
+
+    fetch('/api/save-server-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(config)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showStatus('Server configuration saved successfully!', 'success');
+        } else {
+            showStatus('Error saving server configuration: ' + data.error, 'error');
+        }
+    }).catch(err => {
+        showStatus('Network error saving server configuration.', 'error');
+    });
+}
+
+function testServerConnection() {
+     const config = {
+        host: $('#server_host').val(),
+        port: parseInt($('#server_port').val()),
+        username: $('#server_username').val(),
+        auth_method: $('#server_auth_method').val(),
+        password: $('#server_password').val(),
+        private_key: $('#server_private_key').val(),
+    };
+
+    showStatus('Testing server connection...', 'info');
+
+    fetch('/api/test-server-connection', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(config)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showStatus(data.message, 'success');
+        } else {
+            showStatus('Connection failed: ' + data.error, 'error');
+        }
+    }).catch(err => {
+        showStatus('Network error during connection test.', 'error');
+    });
+}
+
+// --- Utility Functions ---
+function showStatus(message, type) {
+    // A simple feedback mechanism. You can replace this with a more robust notification system.
+    const statusContainer = document.createElement('div');
+    statusContainer.className = `status-message status-${type}`;
+    statusContainer.textContent = message;
+    $('.page-content').prepend(statusContainer);
+    setTimeout(() => $(statusContainer).fadeOut(), 5000);
+}
+
+</script>
+{% endblock %}
