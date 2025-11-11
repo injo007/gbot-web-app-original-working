@@ -20,7 +20,7 @@ import paramiko
 import pyotp
 import re
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, send_from_directory
 from google_auth_oauthlib.flow import InstalledAppFlow
 from faker import Faker
 from email.mime.text import MIMEText
@@ -229,7 +229,7 @@ def before_request():
     app.logger.debug(f"Before request: endpoint={request.endpoint}, user={session.get('user')}, emergency_access={session.get('emergency_access')}, client_ip={get_client_ip()}")
     
     # Always allow these routes without any checks (whitelisted routes)
-    if request.endpoint in ['static', 'login', 'emergency_access', 'test-admin']:
+    if request.endpoint in ['static', 'login', 'emergency_access', 'test-admin', 'assets']:
         app.logger.debug(f"Allowing {request.endpoint} route without restrictions")
         return
 
@@ -298,7 +298,7 @@ def login():
             app.logger.warning(f"User not found: {username}")
             flash('Invalid credentials', 'error')
     
-    return render_template('login.html')
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/logout')
 def logout():
@@ -360,8 +360,7 @@ def health_check():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    accounts = GoogleAccount.query.all()
-    return render_template('dashboard.html', accounts=accounts, user=session.get('user'), role=session.get('role'))
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/users')
 @login_required
@@ -369,7 +368,7 @@ def users():
     if session.get('role') != 'admin':
         flash("Admin access required.", "danger")
         return redirect(url_for('dashboard'))
-    return render_template('users.html', user=session.get('user'), role=session.get('role'))
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/emergency_access')
 def emergency_access():
@@ -424,12 +423,12 @@ def emergency_access():
     # If SECRET_KEY is provided, show the emergency access form
     elif static_key == secret_key:
         app.logger.info("SECRET_KEY provided - showing emergency access form")
-        return render_template('emergency_access.html')
+        return send_from_directory(app.static_folder, 'index.html')
     
-    # If no valid key, show the emergency access form
+    # If no valid key, show the emergency access form (SPA)
     else:
         app.logger.info("No valid key provided - showing emergency access form")
-        return render_template('emergency_access.html')
+        return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/api/emergency-add-ip', methods=['POST'])
 def api_emergency_add_ip():
@@ -567,7 +566,7 @@ def whitelist():
         ip_list = []
     
     app.logger.info(f"Whitelist access granted: user={session.get('user')}, role={session.get('role')}, emergency_access={session.get('emergency_access')}")
-    return render_template('whitelist.html', user=session.get('user'), role=session.get('role'), whitelisted_ips=ip_list)
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/api/add-user', methods=['POST'])
 @login_required
@@ -2975,7 +2974,7 @@ def settings():
     if session.get('role') != 'admin':
         flash('Access denied. Admin privileges required.', 'error')
         return redirect(url_for('dashboard'))
-    return render_template('settings.html', user=session.get('user'), role=session.get('role'))
+    return send_from_directory(app.static_folder, 'index.html')
 
 # Server configuration API routes
 @app.route('/api/get-server-config', methods=['GET'])
@@ -10339,6 +10338,16 @@ def api_change_subdomain_status():
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)})
 
+
+# SPA/API health endpoint for frontend proxy compatibility
+@app.route('/api/health')
+def api_health():
+    return jsonify({'status': 'healthy'}), 200
+
+# Serve built assets for SPA when running via Flask (Nginx serves these in production)
+@app.route('/assets/<path:filename>')
+def assets(filename):
+    return send_from_directory(os.path.join(app.static_folder, 'assets'), filename)
 
 if __name__ == '__main__':
     app.run(debug=True)

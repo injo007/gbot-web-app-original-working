@@ -218,24 +218,14 @@ setup_frontend() {
         exit 1
     fi
 
-    # Install latest npm
-    log "Installing latest npm..."
-    sudo npm install -g npm@latest
+    # Use bundled npm with Node.js 20.x to avoid EBADENGINE on older 20.x minors
+    log "Using bundled npm (no global npm upgrade)"
 
-    # Install required global packages
-    log "Installing global packages..."
-    sudo npm install -g \
-        typescript@latest \
-        @types/node@latest \
-        vite@latest \
-        @vitejs/plugin-react@latest
+    # Skip global TypeScript/Vite installs; use local devDependencies
+    log "Skipping global TypeScript/Vite installs (using local devDependencies)"
 
-    # Verify global packages
-    log "Verifying global packages..."
-    if ! command -v tsc &> /dev/null || ! command -v vite &> /dev/null; then
-        log_error "Global package installation failed"
-        exit 1
-    fi
+    # Verify local toolchain via npm scripts later
+    log "Toolchain verification will run via npm scripts"
 
     # Create frontend directory structure if needed
     log "Setting up directory structure..."
@@ -690,7 +680,8 @@ dist
     # Remove old frontend routes
     sed -i '/# Frontend serving routes/,/return send_from_directory/d' "$SCRIPT_DIR/app.py"
     
-    # Add new frontend routes
+    # Add new frontend routes (disabled; SPA already configured in app.py)
+    if false; then
     cat >> "$SCRIPT_DIR/app.py" << 'EOF'
 
 # Frontend serving routes
@@ -710,6 +701,7 @@ def serve(path):
         return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, 'index.html')
 EOF
+    fi
 
     # Verify Flask app update
     if ! grep -q "send_from_directory" "$SCRIPT_DIR/app.py"; then

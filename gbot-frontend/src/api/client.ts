@@ -5,7 +5,7 @@ import { showToast } from '../store/slices/uiSlice';
 
 // Create axios instance with default config
 const client: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/',
+  baseURL: (import.meta.env.VITE_API_BASE_URL as string) || (import.meta.env.VITE_API_URL as string) || '/api',
   headers: {
     'Content-Type': 'application/json',
   },
