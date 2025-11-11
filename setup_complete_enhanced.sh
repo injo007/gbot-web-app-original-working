@@ -172,9 +172,52 @@ EOF
         exit 1
     }
     
+    # Check if Node.js is installed and install if missing
+    log "Checking for Node.js installation..."
+    if ! command -v node &> /dev/null; then
+        log "Node.js not found. Installing Node.js 20.x..."
+        
+        # Install Node.js 20.x 
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        
+        # Verify installation
+        if ! command -v node &> /dev/null; then
+            log_error "Failed to install Node.js. Trying alternative method..."
+            
+            # Try direct download as fallback
+            sudo apt-get install -y ca-certificates curl gnupg
+            sudo mkdir -p /etc/apt/keyrings
+            curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+            echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+            sudo apt-get update
+            sudo apt-get install -y nodejs
+            
+            if ! command -v node &> /dev/null; then
+                log_error "Node.js installation failed. Please install Node.js manually."
+                exit 1
+            fi
+        fi
+        
+        log_success "Node.js $(node -v) installed successfully"
+    else
+        log_success "Node.js $(node -v) is already installed"
+    fi
+    
+    # Verify npm is available
+    if ! command -v npm &> /dev/null; then
+        log_error "npm not found. Installing npm..."
+        sudo apt-get install -y npm
+        
+        if ! command -v npm &> /dev/null; then
+            log_error "npm installation failed. Please install npm manually."
+            exit 1
+        fi
+    fi
+    
     # Clean npm cache and node_modules
     log "Cleaning npm environment..."
-    npm cache clean --force
+    npm cache clean --force || true
     rm -rf node_modules package-lock.json dist
     
     # Create optimized Vite config
