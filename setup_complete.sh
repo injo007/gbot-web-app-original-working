@@ -19,10 +19,26 @@ PROJECT_NAME="GBot Web Application"
 LOG_FILE="$SCRIPT_DIR/setup.log"
 
 # Frontend configuration
-FRONTEND_DIR="$SCRIPT_DIR/gbot-frontend"
-FRONTEND_DIST="$FRONTEND_DIR/dist"
-FRONTEND_STATIC="$SCRIPT_DIR/static"
-FRONTEND_BACKUP="$SCRIPT_DIR/static.bak"
+if [[ "$SCRIPT_DIR" == */gbot-frontend ]]; then
+    # We're inside the frontend directory
+    FRONTEND_DIR="$SCRIPT_DIR"
+    PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+    FRONTEND_DIST="$FRONTEND_DIR/dist"
+    FRONTEND_STATIC="$PARENT_DIR/static"
+    FRONTEND_BACKUP="$PARENT_DIR/static.bak"
+elif [[ "$SCRIPT_DIR" == */gbot-web-app* ]]; then
+    # We're in the main app directory
+    FRONTEND_DIR="$SCRIPT_DIR/gbot-frontend"
+    FRONTEND_DIST="$FRONTEND_DIR/dist"
+    FRONTEND_STATIC="$SCRIPT_DIR/static"
+    FRONTEND_BACKUP="$SCRIPT_DIR/static.bak"
+else
+    # Fallback for other locations
+    FRONTEND_DIR="$(dirname "$SCRIPT_DIR")/gbot-frontend"
+    FRONTEND_DIST="$FRONTEND_DIR/dist"
+    FRONTEND_STATIC="$(dirname "$SCRIPT_DIR")/static"
+    FRONTEND_BACKUP="$(dirname "$SCRIPT_DIR")/static.bak"
+fi
 
 # Logging functions
 log() {
@@ -67,10 +83,15 @@ setup_frontend() {
         exit 1
     fi
 
-    # Create frontend directory structure
-    log "Creating frontend directory structure..."
-    mkdir -p "$FRONTEND_DIR"/{src,public,dist,node_modules}
-    mkdir -p "$FRONTEND_DIR/src"/{components,pages,store,theme,api,layouts}
+    # Create frontend directory structure if needed
+    log "Setting up directory structure..."
+    if [ ! -d "$FRONTEND_DIR/src" ]; then
+        mkdir -p "$FRONTEND_DIR"/{src,public,dist,node_modules}
+        mkdir -p "$FRONTEND_DIR/src"/{components,pages,store,theme,api,layouts}
+        log_success "Directory structure created"
+    else
+        log "Using existing directory structure"
+    fi
 
     # Backup existing static files
     if [ -d "$FRONTEND_STATIC" ]; then
@@ -81,17 +102,31 @@ setup_frontend() {
     # Create static directory
     mkdir -p "$FRONTEND_STATIC"
 
-    # Copy frontend files with proper error handling
-    log "Copying frontend files..."
-    if [ -d "gbot-frontend" ]; then
-        cp -r gbot-frontend/* "$FRONTEND_DIR/" || {
+    # Check if we're in the correct directory structure
+    if [[ "$SCRIPT_DIR" == */gbot-frontend ]]; then
+        log "Already in frontend directory"
+    elif [[ "$SCRIPT_DIR" == */gbot-web-app* ]]; then
+        log "In main app directory"
+        if [ ! -d "$FRONTEND_DIR" ]; then
+            mkdir -p "$FRONTEND_DIR"
+        fi
+    else
+        log "In external directory"
+        if [ ! -d "$FRONTEND_DIR" ]; then
+            mkdir -p "$FRONTEND_DIR"
+        fi
+    fi
+
+    # No need to copy files if we're already in the right place
+    if [ "$SCRIPT_DIR" != "$FRONTEND_DIR" ] && [ -d "$SCRIPT_DIR/gbot-frontend" ]; then
+        log "Copying frontend files from current directory..."
+        rsync -a --delete "$SCRIPT_DIR/gbot-frontend/" "$FRONTEND_DIR/" || {
             log_error "Failed to copy frontend files"
             exit 1
         }
-    else
-        log_error "Frontend source directory 'gbot-frontend' not found"
-        exit 1
     fi
+    
+    log_success "Frontend directory setup completed"
 
     # Verify critical files
     log "Verifying frontend files..."
